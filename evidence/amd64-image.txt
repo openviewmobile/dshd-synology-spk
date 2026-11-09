@@ -1,0 +1,20 @@
+# Synology amd64 image validation (2026-11-08)
+
+## Image
+Architecture: amd64  OS: linux  Size: 1520428739
+
+## Build (domestic mirrors)
+docker build --platform linux/amd64 --build-arg NODE_IMAGE=node:24-bookworm-slim-amd64 --build-arg NPM_REGISTRY=https://registry.npmmirror.com --build-arg APT_MIRROR=http://mirrors.aliyun.com -t dshd-synology:amd64 .
+
+## Container
+Up 19 seconds
+dshd: binding http://172.17.0.5:3080
+dsh web: listening on 172.17.0.5 over plain HTTP; restrict this port to a trusted proxy or network
+dsh web: http://172.17.0.5:3080/?token=<redacted>
+
+## HTTP
+unauthenticated: 401
+HTTP/1.1 303 See Other
+location: ./
+set-cookie: <redacted>; Max-Age=2592000; Path=/; Expires=Tue, 08 Dec 2026 15:36:07 GMT; HttpOnly; SameSite=Strict
+authenticated: 200 (40102 bytes)

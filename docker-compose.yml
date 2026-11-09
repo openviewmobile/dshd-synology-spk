@@ -1,0 +1,20 @@
+services:
+  dshd:
+    build: .
+    container_name: dshd
+    init: true
+    restart: unless-stopped
+    ports:
+      # Publish on the NAS loopback only; DSM reverse proxy terminates TLS.
+      - "127.0.0.1:3080:3080"
+    volumes:
+      - dshd-home:/home/dsh
+    environment:
+      # Leave empty to use the container's bridge IP (recommended on DSM).
+      DSH_BIND_HOST: ""
+      # Must match the DSM reverse-proxy source; change both values together.
+      DSH_PUBLIC_URL: "https://dsh.example.com"
+      DSH_TRUSTED_HOST: "dsh.example.com"
+
+volumes:
+  dshd-home:

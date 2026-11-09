@@ -1,0 +1,7 @@
+{
+  "docker-project": {
+    "projects": [
+      { "name": "dshd", "path": "compose" }
+    ]
+  }
+}

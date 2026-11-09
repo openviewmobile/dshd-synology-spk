@@ -1,0 +1,13 @@
+# Synology reverse-proxy smoke test
+
+$ docker run ... dshd-synology:test
+dshd: binding http://172.17.0.4:3080
+dshd: public URL https://dsh.example.com (trusted host dsh.example.com)
+dsh web: listening on 172.17.0.4 over plain HTTP; restrict this port to a trusted proxy or network
+dsh web: https://dsh.example.com/?token=nMerLwXuXTdBKYX_imMrS8-UoY8ek_VjJIZ_VVjNW7c
+
+$ curl -o /dev/null -w "%{http_code}" http://127.0.0.1:13080/
+401
+
+$ curl -H "Host: dsh.example.com" ... token URL
+303 http://127.0.0.1:13080/

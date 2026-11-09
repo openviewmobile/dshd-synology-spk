@@ -1,0 +1,17 @@
+# Synology SPK scaffold validation (2026-11-09)
+
+Package structure:
+
+SPK members:
+(dist artifact is temporary; rebuild with spk/build-spk.sh)
+
+start-stop-status syntax: OK (sh -n)
+Not validated: DSM install, docker-project worker, package run-as, TLS/WS, token delivery.
+
+## 2026-11-09 update
+- Main scaffold privilege is now package-by-default with root only for start/stop/status
+  (matches official SPK ctrl-script pattern).
+- Added spk-docker-project candidate: conf/resource docker-project projects=[
+  {name:dshd,path:compose}], startable=no, package/compose/docker-compose.yml.
+- Validated both SPK tar layouts and package.tgz contents on host.
+- Still not installed on DSM.

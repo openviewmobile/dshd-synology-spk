@@ -1,0 +1,27 @@
+#!/bin/sh
+# Minimal DSM 7 package wrapper for the Docker Compose prototype.
+# STATUS: scaffold, not yet validated on DSM hardware.
+set -eu
+PKG_DIR="${SYNOPKG_PKGDEST:-/var/packages/dshd/target}"
+COMPOSE="$PKG_DIR/package/docker-compose.yml"
+DOCKER="/usr/local/bin/docker"
+if [ ! -x "$DOCKER" ]; then DOCKER="/usr/bin/docker"; fi
+
+case "${1:-}" in
+  start)
+    exec "$DOCKER" compose -f "$COMPOSE" up -d
+    ;;
+  stop)
+    exec "$DOCKER" compose -f "$COMPOSE" down
+    ;;
+  status)
+    if "$DOCKER" ps --filter "name=dshd" --format '{{.Names}}' | grep -q dshd; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  *)
+    echo "usage: $0 start|stop|status" >&2
+    exit 1
+    ;;
+esac
