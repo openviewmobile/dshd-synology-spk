@@ -1,20 +1,26 @@
+# Standalone Compose prototype (development / manual Container Manager use).
+# The packaged version lives in spk/package/docker-compose.yml and is driven by
+# /var/packages/dshd/var/config.env. This file intentionally keeps the same
+# environment variable names so the two stay easy to compare.
+name: dshd
 services:
   dshd:
     build: .
+    image: ${DSHD_IMAGE:-dshd-synology:0.2.0}
     container_name: dshd
     init: true
     restart: unless-stopped
     ports:
       # Publish on the NAS loopback only; DSM reverse proxy terminates TLS.
-      - "127.0.0.1:3080:3080"
+      - "127.0.0.1:${DSHD_PORT:-3080}:3080"
     volumes:
       - dshd-home:/home/dsh
     environment:
       # Leave empty to use the container's bridge IP (recommended on DSM).
       DSH_BIND_HOST: ""
       # Must match the DSM reverse-proxy source; change both values together.
-      DSH_PUBLIC_URL: "https://dsh.example.com"
-      DSH_TRUSTED_HOST: "dsh.example.com"
+      DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://127.0.0.1:3080}
+      DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-127.0.0.1}
 
 volumes:
   dshd-home:

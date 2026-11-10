@@ -1,0 +1,7 @@
+#!/bin/sh
+# DSM 7 post-install hook. Runs as root via conf/privilege ctrl-script because
+# it creates directories outside the package target and the optional
+# /usr/local/bin link. All real work lives in scripts/installer.
+set -u
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+exec "$SCRIPT_DIR/installer" init

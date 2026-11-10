@@ -1,0 +1,120 @@
+#!/bin/sh
+# DSHD package installer helper, called by postinst / preuninst.
+#
+# STATUS: not yet exercised by DSM's package manager.
+#
+# init    create the mutable package dir, seed config.env, create data dirs,
+#         and install the optional /usr/local/bin/dshd-token convenience link.
+# cleanup remove only volatile runtime files and the convenience link. The dsh
+#         home, workspace and config.env are never deleted by this script.
+set -u
+
+PKG_NAME="dshd"
+PKG_DEST="${SYNOPKG_PKGDEST:-/var/packages/$PKG_NAME/target}"
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
+PKG_ROOT=$(dirname "$PKG_DEST")
+CONFIG_FILE="$PKG_VAR/config.env"
+CONFIG_EXAMPLE="$PKG_DEST/package/config.env.example"
+TOKEN_LINK="${DSHD_TOKEN_LINK:-/usr/local/bin/dshd-token}"
+
+log() { printf 'dshd: %s\n' "$*"; }
+err() { printf 'dshd: %s\n' "$*" >&2; }
+
+config_value() {
+  # Read one KEY=value line; never execute config.env as shell code.
+  sed -n "s/^$1=//p" "$CONFIG_FILE" 2>/dev/null | tail -n 1 |
+    sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+load_dirs() {
+  DSHD_DATA_DIR=$(config_value DSHD_DATA_DIR)
+  DSHD_WORKSPACE_DIR=$(config_value DSHD_WORKSPACE_DIR)
+  DSHD_PUID=$(config_value DSHD_PUID)
+  DSHD_PGID=$(config_value DSHD_PGID)
+  : "${DSHD_DATA_DIR:=/volume1/docker/dshd}"
+  : "${DSHD_WORKSPACE_DIR:=/volume1/dshd-workspace}"
+  : "${DSHD_PUID:=1001}"
+  : "${DSHD_PGID:=1001}"
+  for pair in "DSHD_DATA_DIR:$DSHD_DATA_DIR" "DSHD_WORKSPACE_DIR:$DSHD_WORKSPACE_DIR"; do
+    key=${pair%%:*}; value=${pair#*:}
+    case "$value" in
+      /?*) ;;
+      *) err "$key must be absolute: $value"; return 1 ;;
+    esac
+    case "$value" in
+      /volume*|"$PKG_VAR"/*) ;;
+      *) err "$key must be under /volume or $PKG_VAR: $value"; return 1 ;;
+    esac
+    case "/$value/" in
+      *"/../"*) err "$key must not contain '..': $value"; return 1 ;;
+    esac
+  done
+}
+
+install_token_link() {
+  [ -x "$PKG_ROOT/scripts/token" ] || return 0
+  [ -d "$(dirname "$TOKEN_LINK")" ] || return 0
+  if ln -sfn "$PKG_ROOT/scripts/token" "$TOKEN_LINK" 2>/dev/null; then
+    log "installed $TOKEN_LINK"
+  else
+    log "could not install $TOKEN_LINK (optional); use $PKG_ROOT/scripts/token"
+  fi
+}
+
+remove_token_link() {
+  [ -L "$TOKEN_LINK" ] || return 0
+  target=$(readlink "$TOKEN_LINK" 2>/dev/null || true)
+  case "$target" in
+    "$PKG_ROOT/scripts/token"|*/"$PKG_NAME"/scripts/token)
+      rm -f "$TOKEN_LINK" && log "removed $TOKEN_LINK"
+      ;;
+  esac
+}
+
+do_init() {
+  mkdir -p "$PKG_VAR" || { err "cannot create $PKG_VAR"; return 1; }
+  if [ ! -f "$CONFIG_FILE" ]; then
+    [ -f "$CONFIG_EXAMPLE" ] || { err "missing $CONFIG_EXAMPLE"; return 1; }
+    cp "$CONFIG_EXAMPLE" "$CONFIG_FILE" || { err "cannot seed $CONFIG_FILE"; return 1; }
+    chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
+    log "seeded $CONFIG_FILE"
+  else
+    log "kept existing $CONFIG_FILE"
+  fi
+
+  load_dirs || return 1
+  mkdir -p "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" ||
+    { err "cannot create data directories"; return 1; }
+
+  if [ "$(id -u)" = "0" ]; then
+    chown "$DSHD_PUID:$DSHD_PGID" "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null || true
+    chmod 0775 "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null || true
+  fi
+
+  install_token_link
+  log "data: $DSHD_DATA_DIR/home; workspace: $DSHD_WORKSPACE_DIR"
+  return 0
+}
+
+do_cleanup() {
+  rm -f "$PKG_VAR/token-url.txt" "$PKG_VAR"/token-url.txt.tmp.* \
+        "$PKG_VAR/status" "$PKG_VAR"/status.tmp.* 2>/dev/null || true
+  remove_token_link
+
+  # Keep config.env, dsh home and workspace for a reinstall. If this is an
+  # upgrade, the new package's postinst will reuse the same config.
+  if [ -f "$CONFIG_FILE" ]; then
+    load_dirs 2>/dev/null || true
+  fi
+  log "kept config and user data (nothing under ${DSHD_DATA_DIR:-/volume1/docker/dshd} was deleted)"
+  return 0
+}
+
+case "${1:-}" in
+  init) do_init ;;
+  cleanup) do_cleanup ;;
+  *)
+    err "usage: $0 {init|cleanup}"
+    exit 1
+    ;;
+esac

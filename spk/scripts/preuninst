@@ -1,0 +1,18 @@
+#!/bin/sh
+# DSM 7 pre-uninstall hook. Runs as root via conf/privilege ctrl-script.
+#
+# It stops the compose project, then removes volatile token/status files and the
+# convenience symlink only.
+# The dsh home, workspace and config.env are deliberately preserved; deleting
+# user data requires an explicit manual action by the administrator.
+set -u
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+
+# DSM normally stops the package before preuninst. Be idempotent and make sure
+# the container is gone even if the uninstall path skipped that step. A failure
+# here must not block uninstall; installer cleanup still removes runtime files.
+if [ -x "$SCRIPT_DIR/start-stop-status" ]; then
+  "$SCRIPT_DIR/start-stop-status" stop >/dev/null 2>&1 || true
+fi
+
+exec "$SCRIPT_DIR/installer" cleanup

@@ -1,12 +1,26 @@
+# DSHD Compose project, flattened into the SPK's package.tgz.
+#
+# Every value below is supplied by /var/packages/dshd/var/config.env through
+# `docker compose --env-file`. The defaults are deliberately loopback-only:
+# DSM's reverse proxy (or an SSH tunnel) is the supported entry point.
+#
+# Do not publish 0.0.0.0:3080. dsh authenticates with a bearer token and relies
+# on its Host/Origin fence; exposing the port directly bypasses both the DSM
+# firewall model and the token delivery flow.
+name: dshd-spk
 services:
   dshd:
-    image: dshd-synology:latest
-    container_name: dshd
+    image: ${DSHD_IMAGE:-dshd-synology:0.2.0}
+    container_name: dshd-spk
+    init: true
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3080:3080"
-    environment:
-      DSH_PUBLIC_URL: "https://dsh.example.com"
-      DSH_TRUSTED_HOST: "dsh.example.com"
+      - "127.0.0.1:${DSHD_PORT:-3080}:3080"
     volumes:
-      - /volume1/docker/dshd/home:/home/dsh
+      - ${DSHD_DATA_DIR:-/volume1/docker/dshd}/home:/home/dsh
+      - ${DSHD_WORKSPACE_DIR:-/volume1/dshd-workspace}:/workspace
+    environment:
+      # Leave empty so the container entrypoint binds its concrete bridge IP.
+      DSH_BIND_HOST: ""
+      DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://127.0.0.1:3080}
+      DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-127.0.0.1}

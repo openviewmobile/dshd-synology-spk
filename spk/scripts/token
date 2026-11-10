@@ -1,0 +1,30 @@
+#!/bin/sh
+# DSHD token helper: print the one-time browser login URL.
+#
+# The URL contains a bearer credential. Treat it like a password: do not paste
+# it into tickets, chat, or logs. A successful login replaces it with an
+# HttpOnly cookie.
+set -u
+
+PKG_NAME="dshd"
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
+TOKEN_FILE="${DSHD_TOKEN_FILE:-$PKG_VAR/token-url.txt}"
+
+if [ ! -e "$TOKEN_FILE" ]; then
+  echo "dshd: no token URL yet. Start DSHD in Package Center first." >&2
+  echo "dshd: expected file: $TOKEN_FILE" >&2
+  exit 1
+fi
+
+if [ ! -r "$TOKEN_FILE" ]; then
+  echo "dshd: token file is not readable by $(id -un 2>/dev/null || echo this user)." >&2
+  echo "dshd: run it as root, e.g. sudo dshd-token" >&2
+  exit 1
+fi
+
+if [ ! -s "$TOKEN_FILE" ]; then
+  echo "dshd: token file is empty; start DSHD again or inspect the container log." >&2
+  exit 1
+fi
+
+cat "$TOKEN_FILE"

@@ -1,12 +1,22 @@
+# Experimental docker-project variant.
+#
+# Container Manager's docker-project worker reads this file from the package
+# target. Values come from a `.env` file next to this compose file (Compose
+# loads it automatically) or from the Container Manager project environment.
+# Defaults are loopback-only and contain no site-specific hostname.
+name: dshd-spk
 services:
   dshd:
-    image: dshd-synology:latest
-    container_name: dshd
+    image: ${DSHD_IMAGE:-dshd-synology:0.2.0}
+    container_name: dshd-spk
+    init: true
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3080:3080"
-    environment:
-      DSH_PUBLIC_URL: "https://dsh.example.com"
-      DSH_TRUSTED_HOST: "dsh.example.com"
+      - "127.0.0.1:${DSHD_PORT:-3080}:3080"
     volumes:
-      - /volume1/docker/dshd/home:/home/dsh
+      - ${DSHD_DATA_DIR:-/volume1/docker/dshd}/home:/home/dsh
+      - ${DSHD_WORKSPACE_DIR:-/volume1/dshd-workspace}:/workspace
+    environment:
+      DSH_BIND_HOST: ""
+      DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://127.0.0.1:3080}
+      DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-127.0.0.1}

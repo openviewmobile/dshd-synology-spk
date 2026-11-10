@@ -1,27 +1,385 @@
 #!/bin/sh
-# Minimal DSM 7 package wrapper for the Docker Compose prototype.
-# STATUS: scaffold, not yet validated on DSM hardware.
-set -eu
-PKG_DIR="${SYNOPKG_PKGDEST:-/var/packages/dshd/target}"
-COMPOSE="$PKG_DIR/package/docker-compose.yml"
-DOCKER="/usr/local/bin/docker"
-if [ ! -x "$DOCKER" ]; then DOCKER="/usr/bin/docker"; fi
+# DSHD DSM 7 package lifecycle script.
+#
+# STATUS: implemented and locally smoke-tested with a fake Docker CLI, but NOT
+# yet installed on DSM hardware. See spk/README.md for the unverified list.
+#
+# DSM calls this script as root (see conf/privilege -> ctrl-script) because the
+# Container Manager Docker socket is owned by root. The package user itself is
+# never given docker-group membership: that group is root-equivalent and would
+# be a wider, persistent privilege than this narrowly scoped control script.
+#
+# Exit codes for `status` follow the DSM convention:
+#   0 running, 1 dead with pid file, 2 dead with lock file, 3 not running,
+#   4 unknown, 150 broken.
+set -u
+
+PKG_NAME="dshd"
+PKG_DEST="${SYNOPKG_PKGDEST:-/var/packages/$PKG_NAME/target}"
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
+PKG_ROOT=$(dirname "$PKG_DEST")
+
+COMPOSE_FILE="${DSHD_COMPOSE:-$PKG_DEST/package/docker-compose.yml}"
+CONFIG_FILE="${DSHD_CONFIG:-$PKG_VAR/config.env}"
+CONFIG_EXAMPLE="$PKG_DEST/package/config.env.example"
+TOKEN_FILE="$PKG_VAR/token-url.txt"
+STATUS_FILE="$PKG_VAR/status"
+SERVICE="dshd"
+
+log() { printf 'dshd: %s\n' "$*"; }
+err() { printf 'dshd: %s\n' "$*" >&2; }
+
+die() {
+  err "$*"
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Configuration and directories
+# ---------------------------------------------------------------------------
+
+ensure_config() {
+  [ -d "$PKG_VAR" ] || mkdir -p "$PKG_VAR" || die "cannot create $PKG_VAR"
+  if [ ! -f "$CONFIG_FILE" ]; then
+    [ -f "$CONFIG_EXAMPLE" ] || die "missing config template: $CONFIG_EXAMPLE"
+    cp "$CONFIG_EXAMPLE" "$CONFIG_FILE" || die "cannot create $CONFIG_FILE"
+    chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
+    log "created $CONFIG_FILE from the package template"
+  fi
+}
+
+# Refuse to create/chown arbitrary root-owned paths. A legitimate data or
+# workspace directory lives on a DSM volume, or (for tests/edge cases) under the
+# package's own var directory.
+validate_storage_dir() {
+  vname="$1"
+  vpath="$2"
+  case "$vpath" in
+    /?*) ;;
+    *) die "$vname must be an absolute directory: $vpath" ;;
+  esac
+  case "$vpath" in
+    /volume*|"$PKG_VAR"/*) ;;
+    *) die "$vname must be under /volume or $PKG_VAR: $vpath" ;;
+  esac
+  case "/$vpath/" in
+    *"/../"*) die "$vname must not contain '..': $vpath" ;;
+  esac
+}
+
+# Parse KEY=value lines without executing the file. config.env lives in the
+# package var directory, so treating it as shell code would let a compromised
+# package user inject commands into this root-run script.
+load_config() {
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) continue ;;
+    esac
+    case "$line" in
+      *=*) key=${line%%=*}; val=${line#*=} ;;
+      *) die "invalid line in $CONFIG_FILE: $line" ;;
+    esac
+    case "$key" in
+      DSHD_IMAGE|DSHD_PORT|DSHD_DATA_DIR|DSHD_WORKSPACE_DIR|DSH_PUBLIC_URL|\
+      DSH_TRUSTED_HOST|DSHD_PUID|DSHD_PGID|DSHD_START_TIMEOUT) ;;
+      *) continue ;;
+    esac
+    case "$val" in
+      \"*\") val=${val#\"}; val=${val%\"} ;;
+      \'*\') val=${val#\'}; val=${val%\'} ;;
+    esac
+    export "$key=$val"
+  done < "$CONFIG_FILE"
+
+  : "${DSHD_IMAGE:=dshd-synology:0.2.0}"
+  : "${DSHD_PORT:=3080}"
+  : "${DSHD_DATA_DIR:=/volume1/docker/dshd}"
+  : "${DSHD_WORKSPACE_DIR:=/volume1/dshd-workspace}"
+  : "${DSH_PUBLIC_URL:=http://127.0.0.1:3080}"
+  : "${DSH_TRUSTED_HOST:=127.0.0.1}"
+  : "${DSHD_PUID:=1001}"
+  : "${DSHD_PGID:=1001}"
+  : "${DSHD_START_TIMEOUT:=90}"
+
+  case "$DSHD_PORT" in
+    ''|*[!0-9]*) die "DSHD_PORT must be a number: $DSHD_PORT" ;;
+  esac
+  [ "$DSHD_PORT" -ge 1025 ] && [ "$DSHD_PORT" -le 65535 ] ||
+    die "DSHD_PORT must be in 1025..65535: $DSHD_PORT"
+
+  case "$DSHD_START_TIMEOUT" in
+    ''|*[!0-9]*) die "DSHD_START_TIMEOUT must be a number: $DSHD_START_TIMEOUT" ;;
+  esac
+
+  validate_storage_dir DSHD_DATA_DIR "$DSHD_DATA_DIR"
+  validate_storage_dir DSHD_WORKSPACE_DIR "$DSHD_WORKSPACE_DIR"
+
+  case "$DSHD_PUID" in ''|*[!0-9]*) die "DSHD_PUID must be a number: $DSHD_PUID" ;; esac
+  case "$DSHD_PGID" in ''|*[!0-9]*) die "DSHD_PGID must be a number: $DSHD_PGID" ;; esac
+
+  [ -n "$DSH_PUBLIC_URL" ] || die "DSH_PUBLIC_URL must not be empty"
+  [ -n "$DSH_TRUSTED_HOST" ] || die "DSH_TRUSTED_HOST must not be empty"
+
+  # Compose reads these from the environment as well as from --env-file. Export
+  # them so a `docker compose` subprocess sees exactly what this script validated.
+  export DSHD_IMAGE DSHD_PORT DSHD_DATA_DIR DSHD_WORKSPACE_DIR
+  export DSH_PUBLIC_URL DSH_TRUSTED_HOST
+}
+
+ensure_dirs() {
+  [ -f "$COMPOSE_FILE" ] || die "missing compose file: $COMPOSE_FILE"
+  mkdir -p "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" ||
+    die "cannot create data directories under $DSHD_DATA_DIR / $DSHD_WORKSPACE_DIR"
+
+  # Do not recurse: existing user data may be owned by the DSM user and must not
+  # be rewritten. New files are created by the container's uid 1001.
+  if [ "$(id -u)" = "0" ]; then
+    chown "$DSHD_PUID:$DSHD_PGID" "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null || true
+    chmod 0775 "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Docker / Compose discovery
+# ---------------------------------------------------------------------------
+
+resolve_runtime() {
+  DOCKER="${DSHD_DOCKER:-}"
+  if [ -z "$DOCKER" ]; then
+    for candidate in \
+      /usr/local/bin/docker \
+      /usr/bin/docker \
+      /var/packages/ContainerManager/target/usr/bin/docker
+    do
+      if [ -x "$candidate" ]; then
+        DOCKER="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ -z "$DOCKER" ]; then
+    DOCKER=$(command -v docker 2>/dev/null || true)
+  fi
+  if [ -z "$DOCKER" ] || [ ! -x "$DOCKER" ]; then
+    err "docker CLI not found; install/enable Container Manager"
+    return 1
+  fi
+
+  if "$DOCKER" compose version >/dev/null 2>&1; then
+    COMPOSE_STYLE="plugin"
+    return 0
+  fi
+
+  DOCKER_COMPOSE=$(command -v docker-compose 2>/dev/null || true)
+  if [ -z "$DOCKER_COMPOSE" ] && [ -x /usr/local/bin/docker-compose ]; then
+    DOCKER_COMPOSE=/usr/local/bin/docker-compose
+  fi
+  if [ -n "$DOCKER_COMPOSE" ] && "$DOCKER_COMPOSE" version >/dev/null 2>&1; then
+    COMPOSE_STYLE="standalone"
+    return 0
+  fi
+
+  err "Docker Compose v2 not found; install/enable Container Manager with Compose v2"
+  return 1
+}
+
+compose() {
+  [ -n "${COMPOSE_STYLE:-}" ] || return 1
+  if [ "$COMPOSE_STYLE" = "plugin" ]; then
+    "$DOCKER" compose --env-file "$CONFIG_FILE" -f "$COMPOSE_FILE" "$@"
+  else
+    "$DOCKER_COMPOSE" --env-file "$CONFIG_FILE" -f "$COMPOSE_FILE" "$@"
+  fi
+}
+
+image_present() {
+  "$DOCKER" image inspect "$DSHD_IMAGE" >/dev/null 2>&1
+}
+
+container_id() {
+  compose ps -q "$SERVICE" 2>/dev/null | head -n 1 | tr -d '\r'
+}
+
+container_running() {
+  cid=$(container_id)
+  [ -n "$cid" ] || return 1
+  [ "$("$DOCKER" inspect -f '{{.State.Running}}' "$cid" 2>/dev/null | tr -d '\r')" = "true" ]
+}
+
+# ---------------------------------------------------------------------------
+# Token and status files
+# ---------------------------------------------------------------------------
+
+write_token() {
+  url="$1"
+  tmp="$TOKEN_FILE.tmp.$$"
+  [ -n "$url" ] || return 1
+  ( umask 077; printf '%s\n' "$url" > "$tmp" ) || return 1
+  chmod 0600 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$TOKEN_FILE" || return 1
+}
+
+write_status() {
+  state="$1"
+  detail="${2:-}"
+  tmp="$STATUS_FILE.tmp.$$"
+  cid=$(container_id 2>/dev/null || true)
+  [ -d "$PKG_VAR" ] || mkdir -p "$PKG_VAR" || return 1
+  {
+    printf 'state=%s\n' "$state"
+    printf 'container_id=%s\n' "$cid"
+    printf 'token_url_file=%s\n' "$TOKEN_FILE"
+    printf 'updated_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date)"
+    [ -n "$detail" ] && printf 'detail=%s\n' "$detail"
+  } > "$tmp" || return 1
+  mv -f "$tmp" "$STATUS_FILE" || return 1
+  chmod 0600 "$STATUS_FILE" 2>/dev/null || true
+}
+
+remove_runtime_files() {
+  rm -f "$TOKEN_FILE" "$TOKEN_FILE".tmp.* "$STATUS_FILE" "$STATUS_FILE".tmp.* 2>/dev/null || true
+}
+
+# Extract the last browser-ready token URL from the dsh container log.
+# dsh prints exactly one line:
+#   dsh web: https://dsh.example.net/?token=<base64url>
+extract_token() {
+  logs=$(compose logs --no-color --no-log-prefix "$SERVICE" 2>/dev/null ||
+         compose logs --no-color "$SERVICE" 2>/dev/null || true)
+  [ -n "$logs" ] || return 1
+  printf '%s\n' "$logs" |
+    sed -n -e 's#.*\(http://[^[:space:]]*[?&]token=[A-Za-z0-9._~=-]*\).*#\1#p' \
+           -e 's#.*\(https://[^[:space:]]*[?&]token=[A-Za-z0-9._~=-]*\).*#\1#p' |
+    tail -n 1
+}
+
+wait_for_ready() {
+  timeout="$DSHD_START_TIMEOUT"
+  elapsed=0
+  while [ "$elapsed" -lt "$timeout" ]; do
+    cid=$(container_id)
+    if [ -n "$cid" ] && ! container_running; then
+      write_status failed "container exited before the token was printed" || true
+      err "container $cid exited before printing a token URL"
+      return 1
+    fi
+    url=$(extract_token)
+    if [ -n "$url" ]; then
+      if ! write_token "$url"; then
+        write_status failed "cannot write $TOKEN_FILE" || true
+        err "found a token URL but could not write $TOKEN_FILE"
+        return 1
+      fi
+      write_status running "token ready" || true
+      log "ready; token URL written to $TOKEN_FILE"
+      log "open it with: sudo $PKG_ROOT/scripts/token"
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+
+  # Never report success when the token is missing: without it the user cannot
+  # authenticate, and Package Center would hide a broken first start.
+  write_status failed "token not found in container logs within ${timeout}s" || true
+  err "container is running but no 'dsh web: ...?token=' line appeared within ${timeout}s"
+  err "inspect the log with:"
+  err "  $DOCKER compose --env-file $CONFIG_FILE -f $COMPOSE_FILE logs $SERVICE"
+  err "the container was left running for diagnosis; the package start is reported as failed"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+
+do_start() {
+  ensure_config
+  load_config
+  if ! resolve_runtime; then
+    write_status failed "docker/compose unavailable" || true
+    return 1
+  fi
+  ensure_dirs
+  # Any start attempt invalidates the previous link; only a token found in the
+  # current container log is allowed to recreate it.
+  rm -f "$TOKEN_FILE" 2>/dev/null || true
+
+  if container_running; then
+    # Always refresh from the log instead of trusting a possibly stale token
+    # file left by an unclean shutdown/crash. The latest token line wins.
+    log "already running; refreshing the token URL from the container log"
+    wait_for_ready
+    return $?
+  fi
+
+  if ! image_present; then
+    write_status failed "image not present: $DSHD_IMAGE" || true
+    err "image '$DSHD_IMAGE' is not present on this NAS"
+    err "build or import it first, e.g. docker build -t $DSHD_IMAGE /path/to/project"
+    err "then edit $CONFIG_FILE if the tag differs"
+    return 1
+  fi
+
+  log "starting compose project from $COMPOSE_FILE"
+  if ! compose up -d --remove-orphans; then
+    write_status failed "docker compose up failed" || true
+    err "docker compose up failed"
+    return 1
+  fi
+
+  wait_for_ready
+}
+
+do_stop() {
+  ensure_config
+  load_config
+
+  if ! resolve_runtime; then
+    # During shutdown the Docker daemon may already be gone. Clean up local
+    # runtime state but never touch the user's home/workspace.
+    err "docker is unavailable; removing only the token/status files"
+    remove_runtime_files
+    write_status stopped "docker unavailable during stop" || true
+    return 0
+  fi
+
+  if ! compose down --remove-orphans; then
+    write_status failed "docker compose down failed" || true
+    err "docker compose down failed; data directories were not touched"
+    return 1
+  fi
+
+  remove_runtime_files
+  write_status stopped "stopped by DSM" || true
+  log "stopped; user data kept in $DSHD_DATA_DIR and $DSHD_WORKSPACE_DIR"
+}
+
+do_status() {
+  if ! resolve_runtime 2>/dev/null; then
+    return 3
+  fi
+  if container_running; then
+    return 0
+  fi
+  return 3
+}
 
 case "${1:-}" in
+  prestart|prestop)
+    exit 0
+    ;;
   start)
-    exec "$DOCKER" compose -f "$COMPOSE" up -d
+    do_start
     ;;
   stop)
-    exec "$DOCKER" compose -f "$COMPOSE" down
+    do_stop
     ;;
   status)
-    if "$DOCKER" ps --filter "name=dshd" --format '{{.Names}}' | grep -q dshd; then
-      exit 0
-    fi
-    exit 1
+    do_status
     ;;
   *)
-    echo "usage: $0 start|stop|status" >&2
+    err "usage: $0 {start|stop|status|prestart|prestop}"
     exit 1
     ;;
 esac
