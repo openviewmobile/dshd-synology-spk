@@ -1,0 +1,108 @@
+# DSHD SPK 0.2.0 local validation (2026-11-10)
+
+Host: macOS (arm64), Docker/Compose available. NOT DSM hardware.
+Artifact: dist/dshd-0.2.0.spk (rebuilt, not committed).
+
+## make all
+```text
+./spk/build-spk.sh
+/Users/figotan/Documents/dshd-synology-spk/spk/../dist/dshd-0.2.0.spk
+./spk-docker-project/build-spk.sh
+/Users/figotan/Documents/dshd-synology-spk/spk-docker-project/../dist/dshd-docker-project-0.2.0.spk
+scripts/check-spk.sh
+== dshd-0.2.0.spk
+  ok: dshd-0.2.0.spk: SPK members
+  ok: dshd-0.2.0.spk: INFO keys/values
+  ok: dshd-0.2.0.spk: icon dimensions
+  ok: dshd-0.2.0.spk: scripts executable and shell syntax
+  ok: dshd-0.2.0.spk: JSON config and port registration
+  ok: dshd-0.2.0.spk: package.tgz contents
+  ok: dshd-0.2.0.spk: docker compose config
+structure OK
+== dshd-docker-project-0.2.0.spk
+  ok: dshd-docker-project-0.2.0.spk: icon dimensions
+structure OK
+== lifecycle smoke (fake Docker CLI)
+lifecycle smoke OK
+all SPK checks OK
+```
+
+## SPK members / modes
+```text
+-rw-r--r--  0 figotan staff     655 Nov 10 13:06 INFO
+-rw-r--r--  0 figotan staff    2341 Nov 10 13:06 package.tgz
+drwxr-xr-x  0 figotan staff       0 Nov 10 13:06 conf/
+-rw-r--r--  0 figotan staff     303 Nov 10 13:06 conf/privilege
+-rw-r--r--  0 figotan staff      68 Nov 10 13:06 conf/resource
+drwxr-xr-x  0 figotan staff       0 Nov 10 13:06 scripts/
+-rwxr-xr-x  0 figotan staff     885 Nov 10 13:06 scripts/token
+-rwxr-xr-x  0 figotan staff     314 Nov 10 13:06 scripts/postinst
+-rwxr-xr-x  0 figotan staff     790 Nov 10 13:06 scripts/preuninst
+-rwxr-xr-x  0 figotan staff   12406 Nov 10 13:06 scripts/start-stop-status
+-rwxr-xr-x  0 figotan staff    3943 Nov 10 13:06 scripts/installer
+-rw-r--r--  0 figotan staff    2608 Nov 10 13:06 PACKAGE_ICON.PNG
+-rw-r--r--  0 figotan staff    7502 Nov 10 13:06 PACKAGE_ICON_256.PNG
+```
+
+## package.tgz
+```text
+drwxr-xr-x  0 figotan staff       0 Nov 10 13:06 package/
+drwxr-xr-x  0 figotan staff       0 Nov 10 13:06 package/port_conf/
+-rw-r--r--  0 figotan staff    1077 Nov 10 13:06 package/docker-compose.yml
+-rw-r--r--  0 figotan staff    2042 Nov 10 13:06 package/config.env.example
+-rw-r--r--  0 figotan staff     133 Nov 10 13:06 package/port_conf/dshd.sc
+```
+
+## Icon assets
+```text
+72x72
+256x256
+fe5896d08a89c4a0f9b264ae052e655ccd1a08cf2ff213a91824f25393310c83  spk/PACKAGE_ICON.PNG
+8f191f748710671e5fdb74cd64d3a1d2c26e914bcdb691985c353bff582ab9b6  spk/PACKAGE_ICON_256.PNG
+```
+
+## Rendered compose (config.env.example)
+```yaml
+name: dshd-spk
+services:
+  dshd:
+    restart: unless-stopped
+    container_name: dshd-spk
+    environment:
+      DSH_BIND_HOST: ""
+      DSH_PUBLIC_URL: http://127.0.0.1:3080
+      DSH_TRUSTED_HOST: 127.0.0.1
+    image: dshd-synology:0.2.0
+    init: true
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: /volume1/docker/dshd/home
+        target: /home/dsh
+        bind: {}
+      - type: bind
+        source: /volume1/dshd-workspace
+        target: /workspace
+        bind: {}
+    ports:
+      - mode: ingress
+        host_ip: 127.0.0.1
+        target: 3080
+        published: "3080"
+        protocol: tcp
+networks:
+  default:
+    name: dshd-spk_default
+```
+
+## Lifecycle smoke
+```text
+lifecycle smoke OK
+```
+
+## Not validated
+- DSM Package Center install/start/stop/upgrade/uninstall
+- Container Manager docker/compose paths and argument support
+- port registration UI, reverse proxy TLS/WebSocket, ACL/UID
+- dsh token log format on DSM

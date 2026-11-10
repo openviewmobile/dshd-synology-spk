@@ -1,4 +1,5 @@
 # Synology SPK scaffold validation (2026-11-09)
+# Historical: superseded by spk-0.2.0.txt (2026-11-10).
 
 Package structure:
 

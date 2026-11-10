@@ -379,10 +379,26 @@ checkport="yes"  startable="yes"
 [`evidence/amd64-image.txt`](../evidence/amd64-image.txt)）。
 仍未验证：DSM 真机 Container Manager、DSM 反代 TLS/WebSocket、DSM 防火墙、首启 token 交付。下一步是 E4/E5（UID/ACL、资源限制）与 SPK 最小外壳。
 
-## 2026-11-09：SPK scaffold
+## 2026-11-09：SPK scaffold（已被 2026-11-10 实现取代）
 
 已加入 [`spk/`](../spk/) 最小外壳：
 `INFO`、`package.tgz`、`conf/privilege`、`start-stop-status`，`start/stop` 调
-`docker compose up/down`。已在主机验证 SPK tar 结构与脚本语法，但**未在 DSM 真机安装**，
-因此仍不能视为可发布包。下一步是把 `run-as: root` 改为 `docker-project` worker，
-并用真机验证端口、反代、升级和 token 交付。
+`docker compose up/down`。已在主机验证 SPK tar 结构与脚本语法，但**未在 DSM 真机安装**。
+
+## 2026-11-10：SPK 0.2.0 实现
+
+`spk/` 从 scaffold 升级为可构建的 DSM 7.2 包（仍**未在 DSM 真机验证**）：
+
+- `INFO` 0.2.0，补齐字段；真实 72/256 图标；
+- `conf/privilege` 默认 package，仅 5 个生命周期脚本 root；
+- `start-stop-status` 定位 Docker/Compose、初始化目录、`compose up -d`、
+  轮询日志提取 token 到 `/var/packages/dshd/var/token-url.txt`，无 token 时启动失败；
+- `scripts/token`、`installer`、`postinst`、`preuninst`；
+- `conf/resource` 端口注册 + `port_conf/dshd.sc`；
+- Compose 参数化（镜像 tag/端口/数据路径/公开 URL），默认无 `example.com`；
+- `scripts/check-spk.sh` 本地校验结构/INFO/图标/Compose/脚本，并用假 Docker CLI
+  冒烟测试启停与 token；`make all` 通过。
+
+仍未验证：DSM 真机安装/启停/升级/卸载、Container Manager 的 Compose 路径与参数、
+端口 UI、反代 TLS/WebSocket、token 日志格式、ACL/UID。详见
+[`docs/spk.md`](spk.md) 与 [`docs/testing.md`](testing.md)。

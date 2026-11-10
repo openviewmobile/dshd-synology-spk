@@ -1,150 +1,252 @@
-# DSHD for Synology DSM（SPK 独立项目）
+# DSHD for Synology DSM（SPK）
 
-本目录是一个可单独复制、构建和验证的 Synology DSM 项目：以 Container Manager +
-Docker Compose 运行 headless dsh，并尝试用 DSM 7 SPK 包一层。包含 Compose 原型、
-两个 SPK scaffold 和结构校验脚本。
+面向 DSM 7.2 的独立 Synology 包项目：用 Container Manager + Docker Compose
+运行 headless dsh，再由原生 SPK 提供套件中心安装、启停、端口注册、首启 token
+交付和卸载清理。
 
-> SPK 包目前是**未在 DSM 真机验证**的 scaffold；正式包仍需 Container Manager 的
-> `docker-project` worker、端口/权限、反向代理和首启 token 交付。
+> **状态：0.2.0 已实现、可构建、通过本地结构与生命周期冒烟检查，但没有在 DSM
+> 真机安装/启动/升级/卸载验证。** 详见 [未验证项](#未验证项) 与
+> [docs/spk.md](docs/spk.md)。不要把它当成已发布的包。
 
 ## 目录
 
 ```
-Dockerfile / entrypoint.sh   headless dsh 镜像原型
-docker-compose.yml           Compose 运行方式
-spk/                         普通 SPK scaffold（docker compose 启停）
-spk-docker-project/          docker-project worker 候选
-scripts/check-spk.sh         构建两个变体并检查 SPK 成员结构
-docs/                        设计与研究记录
-evidence/                    arm64/amd64 镜像与反代证据
-dist/                        本地 SPK 产物（gitignore）
+Dockerfile / entrypoint.sh       headless dsh 镜像原型
+docker-compose.yml               独立 Compose 原型（开发/手工部署）
+spk/                             主 SPK 包（实现版，0.2.0）
+  INFO                           包元数据
+  PACKAGE_ICON.PNG               72x72 图标
+  PACKAGE_ICON_256.PNG           256x256 图标
+  conf/                          privilege、resource、Web Service 候选
+  package/                       package.tgz 内容：compose、配置模板、端口文件
+  scripts/                       生命周期、token、installer
+  tools/                         图标生成与 PNG 尺寸检查（不打包）
+  build-spk.sh                   构建 dist/dshd-0.2.0.spk
+spk-docker-project/              实验性 docker-project worker 变体
+scripts/check-spk.sh             构建两个包并做本地全量检查
+scripts/test-spk-lifecycle.sh    用假 Docker CLI 冒烟测试启停/token 逻辑
+docs/                            设计与测试文档
+evidence/                        本机验证记录
+dist/                            本地 SPK 产物（gitignore）
 ```
 
+## 快速开始
 
-完整设计、SPK 与测试文档见 [docs/](docs/README.md)。这是
-[研究文档](docs/synology-app.md) 的 **A→D 路线**里 E1/E2 的最小可运行原型：
-Container Manager + Compose + headless dsh 镜像 + DSM 反向代理。
+### 1. 构建/导入镜像
 
-## 前提
-
-- DSM 7.2+，Container Manager（Docker）已安装；
-- NAS 能访问 Docker Hub/国内镜像源，或已导入镜像；
-- 不要求 SSH；以下都在 Container Manager 项目界面操作。
-
-## 组成
-
-- [Dockerfile](Dockerfile)：可参数化基础镜像 + dsh 0.2.2-rc.1 + pnpm + ripgrep；默认用 npm 国内镜像与阿里云 Debian 源；
-- [entrypoint.sh](entrypoint.sh)：读取容器 bridge IP 作为 `--host`（dsh 不接受 `0.0.0.0`），端口 3080；
-- [docker-compose.yml](docker-compose.yml)：持久化 `/home/dsh`，只把 3080 发布到 NAS loopback；`DSH_PUBLIC_URL` / `DSH_TRUSTED_HOST` 必须与反代域名一致；
-- [entrypoint.sh](entrypoint.sh)：把 `--public-url` 和 `--trusted-host` 传给 dsh，token 打印成浏览器可直接打开的 HTTPS URL；
-- DSM 反向代理：`https://dsh.example.com` → `http://127.0.0.1:3080`，开启 WebSocket。
-
-## 部署
-
-1. 把本目录上传到 NAS（如 `/volume1/docker/dshd`）；
-2. Container Manager → 项目 → 新增 → 选择该目录的 `docker-compose.yml`；
-3. 构建并启动；打开容器日志，找到：
-
-   ```
-   dsh web: http://<container-ip>:3080/?token=...
-   ```
-
-   该 token 是一次性登录凭据，复制完整 URL。
-4. DSM → 控制面板 → 登录门户 → 反向代理 → 新增：
-   - 来源：HTTPS，`dsh.example.com`，443；
-   - 目的地：HTTP，`127.0.0.1`，3080；
-   - 自定义标题 → WebSocket。
-5. 浏览器打开 `https://dsh.example.com/?token=...`；token 换 cookie 后即可使用。
-
-## 验证
+镜像 tag 默认 `dshd-synology:0.2.0`，与 SPK 的 `config.env` 一致。
 
 ```bash
-# NAS 上（SSH 可选）
-curl -I http://127.0.0.1:3080/
-# 无 cookie 应为 401；带日志里的 token URL 应 303 → 200
+# 在 x86_64 NAS 或构建机上（armv8 NAS 用 linux/arm64）
+docker build --platform linux/amd64 -t dshd-synology:0.2.0 .
 
-docker logs dshd 2>&1 | tail -20
+# 无 NAS 构建环境时：导出后导入
+docker save dshd-synology:0.2.0 | gzip > dshd-image-0.2.0.tar.gz
+# NAS 上（SSH）
+docker load < dshd-image-0.2.0.tar.gz
 ```
 
-## 本机反代语义验证（2026-11-08）
+也可以在 Container Manager → 映像 → 新增 → 从文件导入 tar/tar.gz。
+
+### 2. 构建并检查 SPK
 
 ```bash
-docker run -d --name dshd-test -p 127.0.0.1:13080:3080 \
-  -e DSH_PUBLIC_URL=https://dsh.example.com \
-  -e DSH_TRUSTED_HOST=dsh.example.com dshd-synology:test
-docker logs dshd-test
-# dsh web: https://dsh.example.com/?token=...
-# 用 Host: dsh.example.com 请求 token，返回 303，未认证请求 401
+./spk/build-spk.sh          # 输出 dist/dshd-0.2.0.spk
+scripts/check-spk.sh        # 本地结构 + 生命周期检查；应输出 all SPK checks OK
 ```
 
-记录见 [evidence/reverse-proxy.txt](evidence/reverse-proxy.txt)。这补上了原原型只绑容器 IP、但反代 Host 不在 dsh 信任列表里的缺口。
+`make all` 会先把两个变体构建到 `dist/`，再运行 `scripts/check-spk.sh` 对全新构建做检查。
 
-## amd64 镜像验证（2026-11-08）
+### 3. 在 DSM 安装
 
-在 arm64 Mac 上用 Docker QEMU 构建并运行了 x86_64 镜像，基础镜像通过 DaoCloud 镜像源按 amd64 digest 拉取：
+- **Package Center → 手动安装**：选择 `dist/dshd-0.2.0.spk`；
+- 或 SSH：`sudo synopkg install /volume1/.../dshd-0.2.0.spk`。
+
+安装后 `postinst` 会：
+
+- 创建 `/var/packages/dshd/var/config.env`（首次安装，之后不覆盖）；
+- 创建 `DSHD_DATA_DIR/home` 与 `DSHD_WORKSPACE_DIR`；
+- 尝试建立 `/usr/local/bin/dshd-token` → `/var/packages/dshd/scripts/token`。
+
+### 4. 配置公开地址
 
 ```bash
-docker pull --platform linux/amd64 docker.m.daocloud.io/library/node@sha256:c0a93797ee78814ae6d32fcca2561fdbbe423149c3f5389aad32d86e9fd85bd4
-docker tag docker.m.daocloud.io/library/node@sha256:c0a93797ee78814ae6d32fcca2561fdbbe423149c3f5389aad32d86e9fd85bd4 node:24-bookworm-slim-amd64
-docker build --platform linux/amd64 \
-  --build-arg NODE_IMAGE=node:24-bookworm-slim-amd64 \
-  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
-  --build-arg APT_MIRROR=http://mirrors.aliyun.com \
-  -t dshd-synology:amd64 .
+sudo vi /var/packages/dshd/var/config.env
 ```
 
-容器启动后：未认证 `401`，token `303` + HttpOnly cookie，认证后 `200`（40 KB UI）。
-记录见 [evidence/amd64-image.txt](evidence/amd64-image.txt)。这说明 x86_64 NAS 已有可构建镜像路径；
-仍需 DSM 真机验证 Container Manager 项目、DSM 反代 TLS/WS 和升级。
+至少确认镜像 tag、数据目录和访问地址：
 
-## 已知限制
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DSHD_IMAGE` | `dshd-synology:0.2.0` | 必须已在 NAS 本地存在；启动前会检查，缺失则失败 |
+| `DSHD_PORT` | `3080` | 发布到 NAS loopback 的宿主端口 |
+| `DSHD_DATA_DIR` | `/volume1/docker/dshd` | dsh home 的宿主目录，必须备份；须在 `/volume*` 或包 var 下 |
+| `DSHD_WORKSPACE_DIR` | `/volume1/dshd-workspace` | `/workspace` 的宿主目录，必须备份；限制同上 |
+| `DSH_PUBLIC_URL` | `http://127.0.0.1:3080` | 打印在 token URL 里的公开 origin |
+| `DSH_TRUSTED_HOST` | `127.0.0.1` | dsh Host/Origin 栅栏允许的 authority |
+| `DSHD_PUID` / `DSHD_PGID` | `1001` | 数据目录宿主 owner；当前镜像固定以 1001 运行 |
+| `DSHD_START_TIMEOUT` | `90` | 等待 token 的秒数 |
 
-- **首启 token 交付**是最大 UX 缺口：普通用户不会看容器日志。D 阶段用 SPK 包一层，在 DSM 套件里展示 token/打开 UI；或加一次性 bootstrap 页面。
-- dsh 只接受具体本地地址；不要改成 `0.0.0.0`。
-- DSM 反向代理要允许 WebSocket，否则 UI 会显示连接断开。
-- 容器端口发布到 `127.0.0.1` 可绕过 DSM 防火墙规则；如果改成 `0.0.0.0`，必须同时用 DSM 防火墙限制来源。
-- 多用户/鉴权不在 MVP：一个容器一个 dsh home；token 泄露等于会话泄露。
-- 多架构：arm64 与 amd64 均已在本机 Docker 构建；x86_64 NAS 用上面的 amd64 命令，不能直接搬 arm64 镜像。
-- 最终 SPK 仍建议包 Docker（D 阶段），不要先做原生 SPK；原生方案受 DSM Node 版本和原生模块限制。
+直连（SSH 隧道）可保持 `127.0.0.1`；走 DSM 反向代理时，把 `DSH_PUBLIC_URL`
+设为完整 HTTPS origin（如 `https://dsh.example.net`），`DSH_TRUSTED_HOST` 设为
+同一域名（不带 scheme/端口），两者必须匹配。
 
-### 本机 arm64 验证（可选）
+### 5. 启动并取 token
+
+Package Center 启动套件，或：
 
 ```bash
-docker build --platform linux/arm64 -t dshd-synology:test .
-docker run --rm -p 127.0.0.1:3080:3080 dshd-synology:test
-# 另开终端
-curl -i http://127.0.0.1:3080/    # 401
+sudo synopkg start dshd
+sudo /var/packages/dshd/scripts/token    # 也可是 sudo dshd-token
 ```
 
-## SPK 最小外壳（scaffold）
+`start-stop-status` 会执行 `docker compose up -d`，轮询容器日志，找到
+`dsh web: https://.../?token=...` 后写入：
 
-[spk/](spk/) 提供 DSM 7 普通 SPK 结构：`INFO` + `package.tgz` + `conf/privilege` +
-`start-stop-status`，用 `docker compose` 启停同一 Compose 原型。构建：
+```
+/var/packages/dshd/var/token-url.txt   # root:root, 0600
+```
+
+**token 缺失时启动会返回失败**（不会伪造成功）；容器会保留用于诊断。检查：
 
 ```bash
-spk/build-spk.sh
+sudo docker compose \
+  --env-file /var/packages/dshd/var/config.env \
+  -f /var/packages/dshd/target/package/docker-compose.yml \
+  logs dshd
 ```
 
-这是**未在 DSM 真机验证**的 scaffold；正式包仍需 Container Manager 的
-`docker-project` worker、端口/权限、反代和首启 token 交付。
+### 6. DSM 反向代理（推荐入口）
 
-## docker-project 候选
+控制面板 → 登录门户 → 高级 → 反向代理 → 新增：
 
-[spk-docker-project/](spk-docker-project/) 是不执行 Docker CLI、改用
-`conf/resource` 的 `docker-project` worker 的候选包，`startable="no"`。
-构建：
+- 来源：HTTPS，`dsh.example.net`，443（使用 DSM 证书）；
+- 目的地：HTTP，`127.0.0.1`，`3080`；
+- 自定义标题 → **WebSocket**。
+
+`config.env` 中设置 `DSH_PUBLIC_URL=https://dsh.example.net` 与
+`DSH_TRUSTED_HOST=dsh.example.net`，重启套件。不要把 3080 暴露到 LAN/公网。
+
+## 包结构
+
+```text
+dshd-0.2.0.spk (tar)
+├── INFO
+├── PACKAGE_ICON.PNG          72x72
+├── PACKAGE_ICON_256.PNG      256x256
+├── package.tgz
+│   └── package/
+│       ├── docker-compose.yml
+│       ├── config.env.example
+│       └── port_conf/dshd.sc
+├── conf/
+│   ├── privilege             package 默认；生命周期脚本 root
+│   ├── resource              端口注册
+│   └── resource.webservice.example.json  （不打包，候选）
+└── scripts/
+    ├── start-stop-status
+    ├── token
+    ├── installer
+    ├── postinst
+    └── preuninst
+```
+
+## 权限模型
+
+- `defaults.run-as = "package"`：包文件与普通脚本默认以 `dshd` 包用户运行；
+- `ctrl-script` 仅对 `postinst`、`preuninst`、`start`、`stop`、`status`
+  使用 root。
+
+原因：Container Manager 的 Docker socket 由 root 拥有。另一种做法是把包用户加入
+`docker` 组，但该组等价于 root，且是**持久**授权；相比之下，把权限限制在几个
+短生命周期控制脚本更小。`postinst` 需要 root 创建共享目录外的数据目录和可选
+`/usr/local/bin` 链接；`preuninst` 需要 root 停止容器并移除该链接。
+`start-stop-status` 解析 `config.env` 时
+只按 `KEY=value` 读取并校验白名单键，**不会 source/执行**该文件，避免包用户借配置
+注入 root 命令。
+
+`spk-docker-project/` 变体不执行 Docker CLI，`startable="no"`，把生命周期交给
+Container Manager 的 `docker-project` worker；它仍是实验候选，见
+[spk-docker-project/README.md](spk-docker-project/README.md)。
+
+## 端口与反向代理资源
+
+- `conf/resource` 注册 `port-config.protocol-file = port_conf/dshd.sc`；
+- `dshd.sc` 声明 `3080/tcp`，`port_forward="no"`（不应做路由器端口映射）；
+- 端口注册让 DSM 防火墙界面能识别 DSHD，**不代表**已在真机验证。
+
+DSM 7 的 Web Service `reverse_proxy` worker 需要 WebStation，且门户域名/TLS/Host
+栅栏行为未在真机确认，因此没有放进活动 `conf/resource`。候选配置在
+[spk/conf/resource.webservice.example.json](spk/conf/resource.webservice.example.json)，
+字段依据官方 Web Service 文档；合并前必须真机验证。当前推荐路径仍是控制面板手工
+反向代理。
+
+## 卸载与数据
+
+`preuninst` 先 best-effort 停止 Compose 项目，再删除 `token-url.txt`、`status`
+和 `/usr/local/bin/dshd-token` 链接，**默认保留**：
+
+- `/var/packages/dshd/var/config.env`（升级时复用；整包卸载后 DSM 可能删除包 var）
+- `DSHD_DATA_DIR`（dsh home，始终保留）
+- `DSHD_WORKSPACE_DIR`（工作区，始终保留）
+
+彻底清除需管理员显式执行：
 
 ```bash
-spk-docker-project/build-spk.sh
+sudo rm -rf /volume1/docker/dshd /volume1/dshd-workspace
 ```
 
-同样**未在 DSM 验证**；worker 版本、compose 路径、镜像预载和升级仍需真机确认。
-
-## 结构检查
+## 本地验证
 
 ```bash
-scripts/check-spk.sh
+make all
+# 或 scripts/check-spk.sh
 ```
 
-构建主 scaffold 与 docker-project 候选包，并验证 SPK 成员、`package.tgz` 和 compose 路径。
-这只能证明打包结构正确，不能替代 DSM 安装验证。
+检查内容：SPK tar 成员、INFO 必填键/固定值、图标尺寸、`package.tgz` 内容、
+`conf/privilege`/`resource` JSON、`.sc` 端口、脚本可执行位与 `sh -n`、
+`docker compose config` 渲染、无 `example.com` 默认值，以及用假 Docker CLI 跑
+start/status/stop/token 和“无 token 必须失败”的冒烟测试。
+
+已验证（2026-11-10，本机 macOS/Docker，**非 DSM**）：
+
+```text
+== dshd-0.2.0.spk
+  ... structure OK
+== dshd-docker-project-0.2.0.spk
+  ... structure OK
+== lifecycle smoke (fake Docker CLI)
+lifecycle smoke OK
+all SPK checks OK
+```
+
+镜像层已有的本机验证（401 / token 303 / 认证 200、arm64 与 amd64 构建）见
+[evidence/](evidence/) 与 [docs/testing.md](docs/testing.md)。
+
+## 未验证项
+
+**没有 DSM 硬件测试。** 以下必须在真机确认：
+
+1. DSM 7.2 接受 `version="0.2.0"`（官方文档建议 `feature-build` 形式）。
+2. Package Center 安装/升级/卸载，`ctrl-script` 的 root 身份与 `postinst`/
+   `preuninst` 调用顺序。
+3. Container Manager 提供的 `docker` 路径、Compose v2 插件与 `docker compose`
+   子命令（脚本有候选路径与 `docker-compose` 回退，但未实测）。
+4. `conf/resource` 端口注册在防火墙/端口转发 UI 中可见。
+5. `conf/privilege` 的 `postinst`/`preuninst` root 条目被接受。
+6. 首启日志格式、`--no-log-prefix` 兼容性、token 提取与文件权限。
+7. `docker compose config` 的 `name:` 顶层字段在 Container Manager 版本中可用。
+8. 数据目录 uid/gid 1001 与 DSM 用户/ACL/File Station 的实际显示和写权限。
+9. 反向代理 TLS/WebSocket、Host/Origin 栅栏、cookie 行为。
+10. 套件图标尺寸/显示、`/usr/local/bin/dshd-token` 链接是否符合 Package Center
+    策略。
+11. Web Service `reverse_proxy` 候选（未启用）。
+12. 升级保留 `config.env`/数据、回滚、卸载残留检查、资源限制与日志轮转。
+
+## 文档
+
+- [docs/spk.md](docs/spk.md)：SPK 设计、权限、token、资源、安装/升级/卸载细节
+- [docs/testing.md](docs/testing.md)：本地检查、假 Docker 冒烟、真机检查清单
+- [docs/synology-app.md](docs/synology-app.md)：DSM 应用化路线研究
+- [spk/README.md](spk/README.md)：包内实现与命令速查
+- [spk-docker-project/README.md](spk-docker-project/README.md)：实验变体
