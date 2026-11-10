@@ -21,7 +21,8 @@ dist/                        本地 SPK 产物（gitignore）
 ```
 
 
-这是 [研究文档](docs/synology-app.md) 的 **A→D 路线**里 E1/E2 的最小可运行原型：
+完整设计、SPK 与测试文档见 [docs/](docs/README.md)。这是
+[研究文档](docs/synology-app.md) 的 **A→D 路线**里 E1/E2 的最小可运行原型：
 Container Manager + Compose + headless dsh 镜像 + DSM 反向代理。
 
 ## 前提
