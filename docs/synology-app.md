@@ -2,7 +2,7 @@
 
 - 状态：研究（2026-11-08），不是范围决策。
 - 目标：让 dsh 内核跑在 Synology NAS 上，LAN 内浏览器访问 Web UI；不引入云端/中继。
-- 相关产品文档：仓库根 `docs/adr/0007-local-only-scope.md`、`docs/architecture.md`、`docs/delivery/release-matrix.md`。
+- 相关产品决策见 [ADR-0007](adr/0007-local-only-scope.md)；跨端架构与发布矩阵不随本仓库维护。
 - 结论：**MVP 用 Container Manager + Compose + 预构建多架构镜像 + DSM 反向代理；GA 用 SPK 包一层 Docker 项目；原生 SPK 只在“必须无 Docker”时立项。**
 
 ---
