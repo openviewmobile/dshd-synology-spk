@@ -69,6 +69,6 @@ wipe.
 
 ## Links
 
-- Repository: `<add GitHub URL>`
+- Repository: https://github.com/openviewmobile/dshd-synology-spk
 - Full acceptance record: `docs/testing.md`
 - License: MIT
