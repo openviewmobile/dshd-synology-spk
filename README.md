@@ -12,7 +12,7 @@ Synology DSM 7.2 package. The `0.4.0` native package runs a bundled Node 24 runt
 as the unprivileged package user, listens only on loopback, and is managed from
 Package Center like any other DSM package.
 
-![DeepSeek Harness running in Package Center](docs/acceptance-native-package-center.png)
+![DeepSeek Harness in Package Center (branded preview)](docs/package-center-branded.png)
 
 **Repository:** [github.com/openviewmobile/dshd-synology-spk](https://github.com/openviewmobile/dshd-synology-spk)
 
