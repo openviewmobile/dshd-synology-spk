@@ -1,6 +1,6 @@
 [
   {
-    "step_title": "DSHD Native runtime settings",
+    "step_title": "DeepSeek Harness runtime settings",
     "items": [
       {
         "type": "textfield",

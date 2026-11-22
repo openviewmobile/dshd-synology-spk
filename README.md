@@ -1,4 +1,4 @@
-# DSHD Native for Synology DSM
+# DeepSeek Harness for Synology DSM
 
 **Run DeepSeek Harness (dsh) natively on your NAS — no Docker, no Container Manager, no nested containers.**
 
@@ -7,12 +7,12 @@
 [![Native Node runtime](https://img.shields.io/badge/runtime-native%20Node%2024-8b5cf6)](#architecture)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-DSHD packages the [DeepSeek Harness](https://github.com/deepseek-ai) web agent as a
+This package runs the [DeepSeek Harness](https://github.com/deepseek-ai) web agent as a
 Synology DSM 7.2 package. The `0.4.0` native package runs a bundled Node 24 runtime
 as the unprivileged package user, listens only on loopback, and is managed from
 Package Center like any other DSM package.
 
-![DSHD Native running in Package Center](docs/acceptance-native-package-center.png)
+![DeepSeek Harness running in Package Center](docs/acceptance-native-package-center.png)
 
 **Repository:** [github.com/openviewmobile/dshd-synology-spk](https://github.com/openviewmobile/dshd-synology-spk)
 
@@ -57,7 +57,7 @@ checksums and known limitations.
 - A writable `/volume1` (or another `/volume*` volume) for dsh home and workspace.
 - No Container Manager, Docker, Node.js, or npm on the NAS.
 - `/dev/shm` must be present and executable. DSM blocks `mmap(PROT_EXEC)` from
-  `/volume1` and `/tmp`; DSHD uses a private `/dev/shm/dshd` directory for native
+  `/volume1` and `/tmp`; the package uses a private `/dev/shm/dshd` directory for native
   addon materialization.
 
 ## Install
@@ -66,7 +66,7 @@ checksums and known limitations.
 2. Open **Package Center → Manual Install** and select the file.
 3. Accept the third-party package warning.
 4. Keep the defaults, or choose a dsh home and workspace under `/volume*`.
-5. Start **DSHD Native** and open the token URL:
+5. Start **DeepSeek Harness** and open the token URL:
 
 ```bash
 sudo /usr/local/bin/dshd-token

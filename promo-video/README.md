@@ -1,6 +1,6 @@
-# DSHD Native promo video
+# DeepSeek Harness promo video
 
-A 50-second, 1920×1080 YouTube promo for DSHD Native 0.4.0, built with
+A 50-second, 1920×1080 YouTube promo for DeepSeek Harness 0.4.0, built with
 [Hyperframes](https://hyperframes.heygen.com) (HTML + seekable GSAP timeline)
 and a deterministic three.js particle/NAS background.
 
@@ -26,7 +26,7 @@ are release artifacts.
 | 0:15–0:25 | Install it like a NAS package | Package Center screenshot + wizard crop |
 | 0:25–0:34 | Your files. Your UI. Your NAS. | dsh web UI in a browser frame |
 | 0:34–0:42 | Three steps. No Docker. | Step cards |
-| 0:42–0:50 | DSHD Native 0.4.0 | Icon, CTA, GitHub search hint |
+| 0:42–0:50 | DeepSeek Harness 0.4.0 | Icon, CTA, GitHub search hint |
 
 ## Rebuild
 

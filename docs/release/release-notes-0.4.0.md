@@ -1,4 +1,4 @@
-# DSHD Native 0.4.0
+# DeepSeek Harness 0.4.0
 
 **Run DeepSeek Harness natively on Synology DSM 7.2 — no Docker, no Container Manager.**
 
@@ -15,8 +15,8 @@
 
 | File | Architecture | Size | SHA-256 |
 |---|---|---|---|
-| `dshd-0.4.0.spk` | x86_64 | ~213 MB | `6faac9d152d6493359649c4cb38fcd3914cbbe9e21bd790978ba6b149c667d75` |
-| `dshd-0.4.0-armv8.spk` | armv8 | ~215 MB | `4c1f9f5d93bfb75de34a4cfddaa063649167a58390261a2031d54bf58b3a5aed` |
+| `dshd-0.4.0.spk` | x86_64 | ~213 MB | `00193123cb6e5889648555294c6d463dabc9c4f14d2bd5af8ecc54c244b18e96` |
+| `dshd-0.4.0-armv8.spk` | armv8 | ~215 MB | `bf014ea8fb36e3903bad29f809d2c8f88b52598d34770cb0a988f90e45ce5a1d` |
 
 Verify before installing:
 
@@ -30,7 +30,7 @@ shasum -a 256 dshd-0.4.0.spk dshd-0.4.0-armv8.spk
 2. Package Center → Manual Install → select the SPK.
 3. Accept the third-party package warning.
 4. Keep the wizard defaults, or choose a dsh home and workspace under `/volume*`.
-5. Start **DSHD Native**.
+5. Start **DeepSeek Harness**.
 6. Run `sudo /usr/local/bin/dshd-token` and open the token URL.
 
 ## Verification

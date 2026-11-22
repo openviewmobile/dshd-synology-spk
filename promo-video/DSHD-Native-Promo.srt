@@ -41,7 +41,7 @@ No Docker. No router port forwarding.
 
 11
 00:00:42,600 --> 00:00:46,500
-DSHD Native 0.4.0. Open source on GitHub.
+DeepSeek Harness 0.4.0. Open source on GitHub.
 
 12
 00:00:46,500 --> 00:00:49,800

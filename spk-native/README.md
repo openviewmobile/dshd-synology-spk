@@ -1,4 +1,4 @@
-# DSHD Native (SPK 0.4.0, no Docker)
+# DeepSeek Harness (SPK 0.4.0, no Docker)
 
 Runs headless dsh on DSM 7.2 as **a regular package-user process**, without Docker, Container
 Manager, or the `docker-project` worker. Suitable when you want to avoid Docker-in-Docker, or when

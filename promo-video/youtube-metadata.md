@@ -1,10 +1,10 @@
-# YouTube launch kit — DSHD Native
+# YouTube launch kit — DeepSeek Harness
 
 Repository URLs are set to `openviewmobile/dshd-synology-spk`.
 
 ## Title options
 
-1. **Run an AI Agent on Your NAS — No Docker Needed (DSHD Native)**
+1. **Run an AI Agent on Your NAS — No Docker Needed (DeepSeek Harness)**
 2. **DeepSeek Harness on Synology DSM 7.2 — Native SPK, No Docker**
 3. **Your NAS Can Run an AI Agent. No Docker-in-Docker.**
 
@@ -12,7 +12,7 @@ Recommended: option 1. It leads with the viewer benefit, not the package jargon.
 
 ## Description
 
-Your NAS can do more than store files. DSHD Native runs DeepSeek Harness (dsh)
+Your NAS can do more than store files. DeepSeek Harness (dsh)
 directly on Synology DSM 7.2 — no Docker, no Container Manager, no nested
 containers.
 
@@ -49,7 +49,7 @@ Chapters:
 00:16 Install it like a NAS package
 00:26 Your files, your UI, your NAS
 00:35 Three steps, no Docker
-00:43 DSHD Native 0.4.0
+00:43 DeepSeek Harness 0.4.0
 
 #Synology #DSM #DeepSeek #AIagent #SelfHosted #NAS #Docker #OpenSource
 
@@ -59,7 +59,7 @@ synology, dsm 7.2, synology package, spk, deepseek harness, dsh, ai agent, self 
 
 ## Pinned comment
 
-DSHD Native 0.4.0 is open source. The x86_64 package is tested on VirtualDSM
+DeepSeek Harness 0.4.0 is open source. The x86_64 package is tested on VirtualDSM
 7.2; armv8 is built but not yet booted on ARM DSM. Real model chat needs your own
 DeepSeek API key. Start here: https://github.com/openviewmobile/dshd-synology-spk
 
@@ -67,7 +67,7 @@ DeepSeek API key. Start here: https://github.com/openviewmobile/dshd-synology-sp
 
 - 1280×720, dark navy background, cyan accent.
 - Left: giant “NO DOCKER.” (white), “AI AGENT ON YOUR NAS” (cyan).
-- Right: DSHD Native icon + small Package Center card.
+- Right: DeepSeek Harness whale icon + small Package Center card.
 - Bottom: “DSM 7.2 · x86_64 / armv8”.
 - Keep text inside the safe area; YouTube’s duration badge covers the bottom-right.
 - Use `youtube-thumbnail.png` from this folder.

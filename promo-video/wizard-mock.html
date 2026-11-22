@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0}html,body{width:724px;height:505px;overflow:hidden;background:#f6f8fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:#334155}
+.win{width:724px;height:505px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;box-shadow:0 20px 60px rgba(15,23,42,.2)}
+.head{height:44px;background:#2680eb;color:#fff;display:flex;align-items:center;padding:0 18px;font-size:14px;font-weight:600}.head .x{margin-left:auto;font-size:18px;opacity:.9}
+.body{padding:26px 30px}.title{font-size:16px;font-weight:700;color:#1d4ed8;margin-bottom:22px}
+.row{display:grid;grid-template-columns:190px 1fr;align-items:center;gap:14px;margin:12px 0;font-size:13px}.row label{color:#475569}.field{height:30px;border:1px solid #cbd5e1;border-radius:4px;padding:7px 9px;font-size:12px;color:#334155;background:#fff;white-space:nowrap;overflow:hidden}
+.note{font-size:11px;color:#94a3b8;margin-top:16px;line-height:1.5}
+.foot{display:flex;justify-content:flex-end;gap:9px;border-top:1px solid #e5e7eb;padding:16px 30px}.btn{font-size:12px;padding:7px 22px;border-radius:4px;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569}.btn.p{background:#2680eb;border-color:#2680eb;color:#fff;font-weight:600}
+</style></head><body><div class="win"><div class="head">DeepSeek Harness - Install<span class="x">×</span></div><div class="body"><div class="title">DeepSeek Harness runtime settings</div>
+<div class="row"><label>dsh home (under /volume):</label><div class="field">/volume1/@appdata/dshd/native/home</div></div>
+<div class="row"><label>Workspace (under /volume):</label><div class="field">/volume1/@appdata/dshd/native/workspace</div></div>
+<div class="row"><label>Loopback port:</label><div class="field">3080</div></div>
+<div class="row"><label>Public URL:</label><div class="field">http://127.0.0.1:3080</div></div>
+<div class="row"><label>Trusted host:</label><div class="field">127.0.0.1</div></div>
+<div class="note">Keep the defaults for a local-only setup. The package listens on loopback and stores the token with mode 0600.</div></div>
+<div class="foot"><span class="btn">Back</span><span class="btn p">Next</span></div></div></body></html>
