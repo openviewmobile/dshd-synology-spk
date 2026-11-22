@@ -41,8 +41,8 @@ The native package keeps the useful parts of DSM integration:
 
 | Package | Architecture | Notes |
 |---|---|---|
-| [`dshd-0.4.0.spk`](dist/dshd-0.4.0.spk) | x86_64 | tested on VirtualDSM 7.2 |
-| [`dshd-0.4.0-armv8.spk`](dist/dshd-0.4.0-armv8.spk) | armv8 | built and CLI-checked; ARM DSM boot not yet verified |
+| [`dshd-0.4.0.spk`](https://github.com/openviewmobile/dshd-synology-spk/releases/download/v0.4.0/dshd-0.4.0.spk) | x86_64 | tested on VirtualDSM 7.2 |
+| [`dshd-0.4.0-armv8.spk`](https://github.com/openviewmobile/dshd-synology-spk/releases/download/v0.4.0/dshd-0.4.0-armv8.spk) | armv8 | built and CLI-checked; ARM DSM boot not yet verified |
 
 The SPKs are unsigned community packages. DSM will show a third-party package
 warning; review the source and build it yourself if you need a reproducible artifact.
