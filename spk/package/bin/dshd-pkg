@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stable entry point for the package CLI. Declared in conf/privilege so DSM
+# fixes ownership/permissions; the real implementation lives in ../scripts.
+exec /var/packages/dshd/scripts/dshd "$@"

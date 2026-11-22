@@ -1,0 +1,147 @@
+#!/bin/sh
+# DSHD Native installer helper. Runs as the package user.
+#
+# init       create config.env from the wizard and prepare data directories
+# preupgrade stop the process and back up config
+# cleanup    stop and remove volatile runtime files; user data is kept
+set -u
+
+PKG_NAME="dshd"
+PKG_DEST="${SYNOPKG_PKGDEST:-/var/packages/$PKG_NAME/target}"
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
+CONFIG_FILE="$PKG_VAR/config.env"
+CONFIG_EXAMPLE="$PKG_DEST/config.env.example"
+CTL="$(dirname "$0")/start-stop-status"
+
+log() { printf 'dshd: %s\n' "$*"; }
+warn() { printf 'dshd: warning: %s\n' "$*" >&2; }
+err() { printf 'dshd: %s\n' "$*" >&2; }
+
+config_value() {
+  sed -n "s/^$1=//p" "$CONFIG_FILE" 2>/dev/null | tail -n 1 |
+    sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+config_set() {
+  key="$1"; value="$2"
+  [ -f "$CONFIG_FILE" ] || return 1
+  tmp="$CONFIG_FILE.tmp.$$"
+  awk -v k="$key" -v v="$value" '
+    index($0, k "=") == 1 { print k "=" v; found = 1; next }
+    { print }
+    END { if (!found) print k "=" v }
+  ' "$CONFIG_FILE" > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$CONFIG_FILE"
+}
+
+valid_abs_dir() {
+  case "$1" in /?*) ;; *) return 1 ;; esac
+  case "/$1/" in *"/../"*) return 1 ;; esac
+  case "$1" in /volume[0-9]*/*|"$PKG_VAR"/*) return 0 ;; *) return 1 ;; esac
+}
+
+valid_port() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 1025 ] && [ "$1" -le 65535 ]
+}
+
+valid_url() {
+  case "$1" in http://?*|https://?*) return 0 ;; *) return 1 ;; esac
+}
+
+valid_host() {
+  case "$1" in ''|*[!A-Za-z0-9._:-]*) return 1 ;; *) return 0 ;; esac
+}
+
+apply_wizard() {
+  if [ -n "${DSHD_DATA_DIR:-}" ]; then
+    if valid_abs_dir "$DSHD_DATA_DIR"; then config_set DSHD_DATA_DIR "$DSHD_DATA_DIR"
+    else warn "ignoring DSHD_DATA_DIR (must be under /volume)"; fi
+  fi
+  if [ -n "${DSHD_WORKSPACE_DIR:-}" ]; then
+    if valid_abs_dir "$DSHD_WORKSPACE_DIR"; then config_set DSHD_WORKSPACE_DIR "$DSHD_WORKSPACE_DIR"
+    else warn "ignoring DSHD_WORKSPACE_DIR (must be under /volume)"; fi
+  fi
+  if [ -n "${DSHD_PORT:-}" ]; then
+    if valid_port "$DSHD_PORT"; then config_set DSHD_PORT "$DSHD_PORT"
+    else warn "ignoring DSHD_PORT (must be 1025..65535)"; fi
+  fi
+  if [ -n "${DSH_PUBLIC_URL:-}" ]; then
+    if valid_url "$DSH_PUBLIC_URL"; then config_set DSH_PUBLIC_URL "$DSH_PUBLIC_URL"
+    else warn "ignoring DSH_PUBLIC_URL"; fi
+  fi
+  if [ -n "${DSH_TRUSTED_HOST:-}" ]; then
+    if valid_host "$DSH_TRUSTED_HOST"; then config_set DSH_TRUSTED_HOST "$DSH_TRUSTED_HOST"
+    else warn "ignoring DSH_TRUSTED_HOST"; fi
+  fi
+}
+
+ensure_config() {
+  mkdir -p "$PKG_VAR" || return 1
+  if [ ! -f "$CONFIG_FILE" ]; then
+    [ -f "$CONFIG_EXAMPLE" ] || { err "missing $CONFIG_EXAMPLE"; return 1; }
+    cp "$CONFIG_EXAMPLE" "$CONFIG_FILE" || return 1
+    chmod 0600 "$CONFIG_FILE" 2>/dev/null || true
+  else
+    # Add keys added by newer package versions without touching user values.
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in ''|'#'*) continue ;; *=*) ;; *) continue ;; esac
+      key=${line%%=*}
+      grep -q "^$key=" "$CONFIG_FILE" || printf '%s\n' "$line" >> "$CONFIG_FILE"
+    done < "$CONFIG_EXAMPLE"
+  fi
+  apply_wizard
+}
+
+migrate_legacy_config() {
+  [ -f "$CONFIG_FILE" ] || return 0
+  case "$(config_value DSHD_DATA_DIR)" in
+    /volume*/docker/*|/volume*/docker)
+      cp -f "$CONFIG_FILE" "$CONFIG_FILE.pre-native" 2>/dev/null || true
+      config_set DSHD_DATA_DIR "$PKG_VAR/native/home"
+      config_set DSHD_WORKSPACE_DIR "$PKG_VAR/native/workspace"
+      warn "legacy Docker data path detected; switched to $PKG_VAR/native"
+      warn "old Docker home was owned by uid 1001; see spk-native/README.md to migrate"
+      ;;
+  esac
+}
+
+prepare_dirs() {
+  data=$(config_value DSHD_DATA_DIR); : "${data:=$PKG_VAR/native/home}"
+  work=$(config_value DSHD_WORKSPACE_DIR); : "${work:=$PKG_VAR/native/workspace}"
+  mkdir -p "$data" "$work" "$PKG_VAR/log" || {
+    err "cannot create data/workspace; choose a /volume path writable by the package"
+    return 1
+  }
+  chmod 0700 "$data" 2>/dev/null || true
+  chmod 0750 "$work" 2>/dev/null || true
+  # A private executable tmpfs for native-addon materialization. DSM does not
+  # allow mmap(PROT_EXEC) from /volume1 or /tmp, but /dev/shm works.
+  mkdir -p "/dev/shm/$PKG_NAME" 2>/dev/null || true
+  chmod 0700 "/dev/shm/$PKG_NAME" 2>/dev/null || true
+}
+
+do_init() {
+  ensure_config || return 1
+  migrate_legacy_config
+  prepare_dirs || return 1
+  printf 'state=stopped\nmessage=installed\nupdated=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" > "$PKG_VAR/status"
+  log "installed; config $CONFIG_FILE"
+  return 0
+}
+
+do_cleanup() {
+  if [ -x "$CTL" ]; then "$CTL" stop >/dev/null 2>&1 || true; fi
+  rm -f "$PKG_VAR/dshd.pid" "$PKG_VAR/token-url.txt" 2>/dev/null || true
+  return 0
+}
+
+case "${1:-}" in
+  init) do_init ;;
+  cleanup) do_cleanup ;;
+  preupgrade)
+    [ -f "$CONFIG_FILE" ] && cp -f "$CONFIG_FILE" "$CONFIG_FILE.preupgrade" 2>/dev/null || true
+    do_cleanup
+    ;;
+  *) err "usage: $0 {init|cleanup|preupgrade}"; exit 1 ;;
+esac

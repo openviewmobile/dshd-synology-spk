@@ -1,0 +1,17 @@
+#!/bin/sh
+# Print the one-time browser login URL. Treat it as a password.
+set -u
+PKG_NAME="dshd"
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
+TOKEN_FILE="${DSHD_TOKEN_FILE:-$PKG_VAR/token-url.txt}"
+if [ ! -e "$TOKEN_FILE" ]; then
+  echo "dshd: no token URL yet. Start DSHD Native in Package Center first." >&2
+  exit 1
+fi
+if [ ! -r "$TOKEN_FILE" ]; then
+  echo "dshd: token file is not readable by $(id -un 2>/dev/null || echo this user)." >&2
+  echo "dshd: run it as root, e.g. sudo dshd-token" >&2
+  exit 1
+fi
+[ -s "$TOKEN_FILE" ] || { echo "dshd: token file is empty" >&2; exit 1; }
+cat "$TOKEN_FILE"

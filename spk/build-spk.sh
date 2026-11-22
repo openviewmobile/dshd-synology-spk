@@ -57,9 +57,15 @@ required_files=(
   conf/resource
   scripts/start-stop-status
   scripts/token
+  scripts/dshd
   scripts/installer
   scripts/postinst
   scripts/preuninst
+  scripts/preupgrade
+  scripts/postupgrade
+  WIZARD_UIFILES/install_uifile
+  WIZARD_UIFILES/install_uifile_chs
+  WIZARD_UIFILES/install_uifile_cht
   PACKAGE_ICON.PNG
   PACKAGE_ICON_256.PNG
 )
@@ -83,7 +89,12 @@ python3 -m json.tool "$HERE/conf/resource" >/dev/null ||
 python3 -m json.tool "$HERE/conf/resource.webservice.example.json" >/dev/null ||
   die "conf/resource.webservice.example.json is not valid JSON"
 
-for script in start-stop-status token installer postinst preuninst; do
+for uifile in install_uifile install_uifile_chs install_uifile_cht; do
+  python3 -m json.tool "$HERE/WIZARD_UIFILES/$uifile" >/dev/null ||
+    die "WIZARD_UIFILES/$uifile is not valid JSON"
+done
+
+for script in start-stop-status token dshd installer postinst preuninst preupgrade postupgrade; do
   sh -n "$HERE/scripts/$script" || die "shell syntax error in scripts/$script"
 done
 
@@ -104,23 +115,32 @@ cp "$HERE/INFO" "$TMP/INFO"
 cp "$HERE/PACKAGE_ICON.PNG" "$HERE/PACKAGE_ICON_256.PNG" "$TMP/"
 cp "$HERE/conf/privilege" "$HERE/conf/resource" "$TMP/conf/"
 cp "$HERE"/scripts/start-stop-status "$HERE"/scripts/token \
-   "$HERE"/scripts/installer "$HERE"/scripts/postinst \
-   "$HERE"/scripts/preuninst "$TMP/scripts/"
+   "$HERE"/scripts/dshd "$HERE"/scripts/installer \
+   "$HERE"/scripts/preinst "$HERE"/scripts/postinst "$HERE"/scripts/preuninst \
+   "$HERE"/scripts/preupgrade "$HERE"/scripts/postupgrade "$TMP/scripts/"
 cp -R "$HERE/package" "$TMP/package"
+cp -R "$HERE/WIZARD_UIFILES" "$TMP/WIZARD_UIFILES"
 
-find "$TMP" -name '.DS_Store' -delete 2>/dev/null || true
+find "$TMP" \( -name '.DS_Store' -o -name '._*' \) -delete 2>/dev/null || true
 find "$TMP/package" -type f -exec chmod 0644 {} +
 find "$TMP/package" -type d -exec chmod 0755 {} +
-chmod 0644 "$TMP/INFO" "$TMP"/PACKAGE_ICON*.PNG "$TMP"/conf/*
+# The dsh container runs as uid 1001; these bind-mount roots must be writable
+# before Container Manager's docker-project worker starts the container.
+chmod 0777 "$TMP/package/compose/data/home" "$TMP/package/compose/data/workspace" "$TMP/package/compose/data/run"
+[ -d "$TMP/package/bin" ] && find "$TMP/package/bin" -type f -exec chmod 0755 {} +
+chmod 0755 "$TMP/package/compose/entrypoint.sh"
+chmod 0644 "$TMP/INFO" "$TMP"/PACKAGE_ICON*.PNG "$TMP"/conf/* "$TMP"/WIZARD_UIFILES/*
 chmod 0755 "$TMP"/scripts/*
 
-# package.tgz must contain the `package/` directory at its root.
-tar -czf "$TMP/package.tgz" -C "$TMP" package
+# package.tgz contains the package files at its root; DSM extracts it into
+# /var/packages/<name>/target. Do not add a `package/` level here.
+( cd "$TMP/package" && COPYFILE_DISABLE=1 tar -czf "$TMP/package.tgz" . )
 rm -rf "$TMP/package"
 
 SPK="$OUT/$PKG_NAME-$VERSION.spk"
 rm -f "$SPK"
-( cd "$TMP" && tar -cf "$SPK" \
-    INFO package.tgz conf scripts PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG )
+( cd "$TMP" && COPYFILE_DISABLE=1 tar -cf "$SPK" \
+    INFO package.tgz conf scripts WIZARD_UIFILES \
+    PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG )
 
 printf '%s\n' "$SPK"

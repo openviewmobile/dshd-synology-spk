@@ -1,0 +1,6 @@
+#!/bin/sh
+# Native package: no Docker image/project to seed.
+set -u
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/dshd/var}"
+mkdir -p "$PKG_VAR/log" "$PKG_VAR/home" "$PKG_VAR/workspace" 2>/dev/null || true
+exit 0

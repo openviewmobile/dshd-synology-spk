@@ -1,0 +1,62 @@
+[
+  {
+    "step_title": "DSHD 原生執行設定",
+    "items": [
+      {
+        "type": "textfield",
+        "subitems": [
+          {
+            "key": "DSHD_DATA_DIR",
+            "desc": "dsh 主目錄（/volume 下）",
+            "defaultValue": "/volume1/@appdata/dshd/native/home",
+            "validator": {
+              "minLength": 6,
+              "maxLength": 255,
+              "regexp": "/^\\/volume[0-9]+\\/.+$/"
+            }
+          },
+          {
+            "key": "DSHD_WORKSPACE_DIR",
+            "desc": "Workspace（/volume 下）",
+            "defaultValue": "/volume1/@appdata/dshd/native/workspace",
+            "validator": {
+              "minLength": 6,
+              "maxLength": 255,
+              "regexp": "/^\\/volume[0-9]+\\/.+$/"
+            }
+          },
+          {
+            "key": "DSHD_PORT",
+            "desc": "Loopback 埠",
+            "defaultValue": "3080",
+            "validator": {
+              "minLength": 4,
+              "maxLength": 5,
+              "regexp": "/^(102[5-9]|10[3-9][0-9]|1[1-9][0-9]{2}|[2-9][0-9]{3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$/"
+            }
+          },
+          {
+            "key": "DSH_PUBLIC_URL",
+            "desc": "公開存取 URL",
+            "defaultValue": "http://127.0.0.1:3080",
+            "validator": {
+              "minLength": 8,
+              "maxLength": 255,
+              "regexp": "/^https?:\\/\\/.*$/"
+            }
+          },
+          {
+            "key": "DSH_TRUSTED_HOST",
+            "desc": "Trusted Host",
+            "defaultValue": "127.0.0.1",
+            "validator": {
+              "minLength": 1,
+              "maxLength": 255,
+              "regexp": "/^[A-Za-z0-9._:-]+$/"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

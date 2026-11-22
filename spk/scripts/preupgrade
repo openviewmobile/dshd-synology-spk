@@ -1,0 +1,8 @@
+#!/bin/sh
+# DSM 7 pre-upgrade hook. Runs as root via conf/privilege ctrl-script.
+#
+# DSM stops the package before replacing it; this hook only snapshots the
+# existing config so an operator can roll back after a failed upgrade.
+set -u
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+exec "$SCRIPT_DIR/installer" preupgrade

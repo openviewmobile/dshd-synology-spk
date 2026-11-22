@@ -1,0 +1,11 @@
+{
+  "port-config": {
+    "protocol-file": "port_conf/dshd.sc"
+  },
+  "usr-local-linker": {
+    "bin": [
+      "bin/dshd",
+      "bin/dshd-token"
+    ]
+  }
+}

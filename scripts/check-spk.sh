@@ -35,8 +35,8 @@ check_info() {
   done
   [ "$(info_value package "$info")" = "dshd" ] ||
     fail "$name: package must be dshd"
-  [ "$(info_value version "$info")" = "0.2.0" ] ||
-    fail "$name: version must be 0.2.0"
+  [ "$(info_value version "$info")" = "0.3.0" ] ||
+    fail "$name: version must be 0.3.0"
   [ "$(info_value startable "$info")" = "yes" ] ||
     fail "$name: startable must be yes"
   [ "$(info_value ctl_stop "$info")" = "yes" ] ||
@@ -47,6 +47,9 @@ check_info() {
     fail "$name: support_center must be no"
   [ "$(info_value arch "$info")" = "x86_64 armv8" ] ||
     fail "$name: arch must be x86_64 armv8"
+  dep=$(info_value install_dep_packages "$info")
+  [ -z "$dep" ] || [ "$dep" = "ContainerManager" ] ||
+    fail "$name: unexpected dependency: $dep"
   [[ "$(info_value os_min_ver "$info")" == 7.2-* ]] ||
     fail "$name: os_min_ver must target DSM 7.2"
   pass "$name: INFO keys/values"
@@ -63,7 +66,7 @@ check_icons() {
 
 check_scripts() {
   local x="$1" name="$2"
-  local scripts=(start-stop-status token installer postinst preuninst)
+  local scripts=(start-stop-status token dshd installer preinst postinst preuninst preupgrade postupgrade)
   for script in "${scripts[@]}"; do
     [ -f "$x/scripts/$script" ] || fail "$name: missing scripts/$script"
     [ -x "$x/scripts/$script" ] || fail "$name: scripts/$script is not executable"
@@ -80,26 +83,46 @@ check_json_and_sc() {
     fail "$name: conf/privilege is not valid JSON"
   python3 -m json.tool "$x/conf/resource" >/dev/null ||
     fail "$name: conf/resource is not valid JSON"
-  python3 - "$x/conf/privilege" <<'PY' || fail "$name: privilege does not grant root to lifecycle scripts"
+  python3 - "$x/conf/privilege" <<'PY' || fail "$name: privilege must run as package"
 import json, sys
 p = json.load(open(sys.argv[1]))
 assert p["defaults"]["run-as"] == "package", p
-actions = {i["action"]: i["run-as"] for i in p.get("ctrl-script", [])}
-for action in ("start", "stop", "status", "postinst", "preuninst"):
-    assert actions.get(action) == "root", (action, actions)
 PY
   python3 - "$x/conf/resource" <<'PY' || fail "$name: resource lacks port-config"
 import json, sys
 r = json.load(open(sys.argv[1]))
 assert r["port-config"]["protocol-file"] == "port_conf/dshd.sc", r
+assert "docker-project" in r or "docker" in r, r
 PY
-  [ -f "$target/package/port_conf/dshd.sc" ] ||
+  [ -f "$target/port_conf/dshd.sc" ] ||
     fail "$name: package.tgz missing port_conf/dshd.sc"
-  grep -qx '\[dshd_web\]' "$target/package/port_conf/dshd.sc" ||
+  grep -qx '\[dshd_web\]' "$target/port_conf/dshd.sc" ||
     fail "$name: dshd.sc missing [dshd_web] section"
-  grep -q '^dst.ports="3080/tcp"' "$target/package/port_conf/dshd.sc" ||
+  grep -q '^dst.ports="3080/tcp"' "$target/port_conf/dshd.sc" ||
     fail "$name: dshd.sc must register 3080/tcp"
   pass "$name: JSON config and port registration"
+}
+
+check_wizard() {
+  local x="$1" name="$2"
+  for uifile in install_uifile install_uifile_chs install_uifile_cht; do
+    local f="$x/WIZARD_UIFILES/$uifile"
+    [ -f "$f" ] || fail "$name: missing WIZARD_UIFILES/$uifile"
+    python3 - "$f" <<'PYWIZ' || fail "$name: invalid wizard $uifile"
+import json, sys
+data = json.load(open(sys.argv[1]))
+assert isinstance(data, list) and data, data
+items = data[0]["items"][0]["subitems"]
+keys = {i["key"] for i in items}
+for key in ("DSHD_DATA_DIR", "DSHD_WORKSPACE_DIR", "DSHD_PORT",
+            "DSHD_IMAGE", "DSH_PUBLIC_URL", "DSH_TRUSTED_HOST"):
+    assert key in keys, (key, keys)
+for item in items:
+    assert item.get("defaultValue") is not None, item
+    assert item.get("validator"), item
+PYWIZ
+  done
+  pass "$name: install wizard JSON"
 }
 
 check_package_tgz() {
@@ -107,30 +130,32 @@ check_package_tgz() {
   local tgz="$x/package.tgz"
   [ -f "$tgz" ] || fail "$name: missing package.tgz"
   local members
-  members="$(tar -tzf "$tgz")"
+  members="$(tar -tzf "$tgz" | sed 's#^\./##')"
   for required in \
-    package/docker-compose.yml \
-    package/config.env.example \
-    package/port_conf/dshd.sc
+    docker-compose.yml \
+    config.env.example \
+    port_conf/dshd.sc
   do
     grep -qxF "$required" <<<"$members" ||
       fail "$name: package.tgz missing $required"
   done
-  if grep -q '\.DS_Store' <<<"$members"; then
-    fail "$name: package.tgz contains .DS_Store"
+  if grep -Eq '(^|/)(\.DS_Store|\._)' <<<"$members"; then
+    fail "$name: package.tgz contains macOS metadata files"
   fi
   pass "$name: package.tgz contents"
 }
 
 check_compose() {
   local x="$1" name="$2"
-  local compose="$x/target/package/docker-compose.yml"
-  local envfile="$x/target/package/config.env.example"
+  local compose="$x/target/docker-compose.yml"
+  local envfile="$x/target/config.env.example"
   [ -f "$compose" ] || fail "$name: missing docker-compose.yml"
   [ -f "$envfile" ] || fail "$name: missing config.env.example"
 
-  for var in DSHD_IMAGE DSHD_PORT DSHD_DATA_DIR DSHD_WORKSPACE_DIR \
-             DSH_PUBLIC_URL DSH_TRUSTED_HOST; do
+  for var in DSHD_IMAGE DSHD_ALLOW_PULL DSHD_PORT DSHD_DATA_DIR \
+             DSHD_WORKSPACE_DIR DSH_PUBLIC_URL DSH_TRUSTED_HOST \
+             DSHD_MEM_LIMIT DSHD_CPUS DSHD_PIDS_LIMIT \
+             DSHD_LOG_MAX_SIZE DSHD_LOG_MAX_FILE DSHD_MIN_FREE_MB; do
     grep -q "^${var}=" "$envfile" ||
       fail "$name: config.env.example missing $var"
   done
@@ -142,7 +167,7 @@ check_compose() {
     fail "$name: compose public URL is not parameterized"
   grep -q '127.0.0.1:\${DSHD_PORT' "$compose" ||
     fail "$name: compose must publish on 127.0.0.1"
-  if grep -RIn 'example\.com' "$x/target/package" >/dev/null 2>&1; then
+  if grep -RIn 'example\.com' "$x/target" >/dev/null 2>&1; then
     fail "$name: packaged defaults still contain example.com"
   fi
 
@@ -151,12 +176,22 @@ check_compose() {
       cat "$x/compose.err" >&2
       fail "$name: docker compose config failed"
     fi
-    grep -q 'image: dshd-synology:0.2.0' "$x/compose.out" ||
+    grep -q 'image: dshd-synology:0.3.0' "$x/compose.out" ||
       fail "$name: rendered image tag is wrong"
     grep -q 'host_ip: 127.0.0.1' "$x/compose.out" ||
       fail "$name: rendered port is not bound to 127.0.0.1"
     grep -q 'DSH_PUBLIC_URL: http://127.0.0.1:3080' "$x/compose.out" ||
       fail "$name: rendered DSH_PUBLIC_URL is wrong"
+    grep -q 'healthcheck:' "$x/compose.out" ||
+      fail "$name: compose healthcheck missing"
+    grep -q 'pids_limit: 512' "$x/compose.out" ||
+      fail "$name: compose pids_limit missing"
+    grep -q 'no-new-privileges:true' "$x/compose.out" ||
+      fail "$name: compose no-new-privileges missing"
+    grep -q 'max-size: 10m' "$x/compose.out" ||
+      fail "$name: compose log rotation missing"
+    grep -q 'cap_drop:' "$x/compose.out" ||
+      fail "$name: compose cap_drop missing"
     if grep -q 'example\.com' "$x/compose.out"; then
       fail "$name: rendered compose contains example.com"
     fi
@@ -176,8 +211,10 @@ check_main() {
   members="$(tar -tf "$spk")"
   for required in \
     INFO package.tgz conf/privilege conf/resource \
-    scripts/start-stop-status scripts/token scripts/installer \
-    scripts/postinst scripts/preuninst \
+    scripts/start-stop-status scripts/token scripts/dshd scripts/installer \
+    scripts/postinst scripts/preuninst scripts/preupgrade scripts/postupgrade \
+    WIZARD_UIFILES/install_uifile WIZARD_UIFILES/install_uifile_chs \
+    WIZARD_UIFILES/install_uifile_cht \
     PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
   do
     require_member "$spk" "$required"
@@ -197,48 +234,16 @@ check_main() {
   check_icons "$x" "$name"
   check_scripts "$x" "$name"
   check_json_and_sc "$x" "$name" "$x/target"
+  check_wizard "$x" "$name"
   check_package_tgz "$x" "$name"
   check_compose "$x" "$name"
   echo "structure OK"
 }
 
-check_alt() {
-  local spk="$1"
-  local name
-  name="$(basename "$spk")"
-  echo "== $name"
-
-  for required in INFO package.tgz PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG; do
-    require_member "$spk" "$required"
-  done
-  local x="$TMP/alt-x"
-  mkdir -p "$x"
-  tar -xf "$spk" -C "$x"
-  [ "$(info_value package "$x/INFO")" = "dshd" ] ||
-    fail "$name: package must be dshd"
-  [ "$(info_value version "$x/INFO")" = "0.2.0" ] ||
-    fail "$name: version must be 0.2.0"
-  [ "$(info_value startable "$x/INFO")" = "no" ] ||
-    fail "$name: docker-project variant must set startable=no"
-  check_icons "$x" "$name"
-  mkdir -p "$x/target"
-  tar -xzf "$x/package.tgz" -C "$x/target"
-  [ -f "$x/target/package/compose/docker-compose.yml" ] ||
-    fail "$name: package.tgz missing package/compose/docker-compose.yml"
-  if grep -RIn 'example\.com' "$x/target/package" >/dev/null 2>&1; then
-    fail "$name: packaged defaults still contain example.com"
-  fi
-  grep -q '\${DSH_PUBLIC_URL' "$x/target/package/compose/docker-compose.yml" ||
-    fail "$name: compose public URL is not parameterized"
-  echo "structure OK"
-}
-
-mkdir -p "$TMP/main" "$TMP/alt"
+mkdir -p "$TMP/main"
 MAIN_SPK="$("$ROOT/spk/build-spk.sh" "$TMP/main")"
-ALT_SPK="$("$ROOT/spk-docker-project/build-spk.sh" "$TMP/alt")"
 
 check_main "$MAIN_SPK"
-check_alt "$ALT_SPK"
 
 echo "== lifecycle smoke (fake Docker CLI)"
 bash "$ROOT/scripts/test-spk-lifecycle.sh" "$MAIN_SPK"

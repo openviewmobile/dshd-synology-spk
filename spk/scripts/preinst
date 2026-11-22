@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs before package files are replaced. Create the directory the Docker
+# Project worker bind-mounts for the token before it acquires the project.
+set -u
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/dshd/var}"
+mkdir -p "$PKG_VAR/run" "$PKG_VAR/home" "$PKG_VAR/workspace" 2>/dev/null || true
+chmod 0777 "$PKG_VAR/run" "$PKG_VAR/home" "$PKG_VAR/workspace" 2>/dev/null || true
+exit 0

@@ -10,13 +10,19 @@ FROM ${NODE_IMAGE}
 
 ARG NPM_REGISTRY
 ARG APT_MIRROR
+ARG DSHD_VERSION=0.3.0
+
+LABEL org.opencontainers.image.title="DSHD" \
+      org.opencontainers.image.description="DeepSeek Harness (dsh) headless web host for Synology DSM" \
+      org.opencontainers.image.version="${DSHD_VERSION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN if [ -n "$APT_MIRROR" ]; then \
       sed -i "s|http://deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
     fi \
  && apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends ca-certificates bash ripgrep tini \
+ && apt-get install -y -qq --no-install-recommends \
+      ca-certificates bash ripgrep tini curl git python3 jq unzip xz-utils procps less \
  && rm -rf /var/lib/apt/lists/*
 
 RUN npm config set registry "$NPM_REGISTRY" \

@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<script src="assets/vendor/three.min.js"></script>
+<script src="assets/vendor/gsap.min.js"></script>
+<style>
+  :root {
+    --bg: #05070d;
+    --bg2: #0b1220;
+    --ink: #f4f7fb;
+    --muted: #a9b7ca;
+    --cyan: #67e8f9;
+    --blue: #60a5fa;
+    --violet: #a78bfa;
+    --green: #34d399;
+    --red: #fb7185;
+    --line: rgba(148, 163, 184, .22);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Arial, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  body { font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  #stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background:
+      radial-gradient(1100px 720px at 72% 18%, rgba(37, 99, 235, .20), transparent 60%),
+      radial-gradient(900px 620px at 18% 84%, rgba(124, 58, 237, .13), transparent 62%),
+      linear-gradient(145deg, #04060b 0%, #07101c 52%, #05070d 100%);
+  }
+  #bg { position: absolute; inset: 0; width: 1920px; height: 1080px; z-index: 0; }
+  .vignette {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background:
+      radial-gradient(1200px 760px at 50% 46%, transparent 42%, rgba(0,0,0,.58) 100%),
+      linear-gradient(90deg, rgba(3,6,12,.62), transparent 32%, transparent 68%, rgba(3,6,12,.62));
+  }
+  .grain {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .16;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    mix-blend-mode: soft-light;
+  }
+  .scene {
+    position: absolute; inset: 0; z-index: 2; opacity: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 100px 132px;
+  }
+  .clip { position: absolute; inset: 0; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 17px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--cyan);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .eyebrow::before { content: ""; width: 34px; height: 1px; background: var(--cyan); display: block; }
+  .kicker {
+    font-family: var(--mono); font-size: 15px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .display {
+    font-size: 118px; line-height: .92; letter-spacing: -.055em; font-weight: 760;
+  }
+  .grad {
+    background: linear-gradient(100deg, #ffffff 12%, #a5f3fc 48%, #93c5fd 90%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .muted { color: var(--muted); }
+  .micro { font-family: var(--mono); font-size: 17px; color: #9ba9bc; letter-spacing: .04em; }
+
+  /* ---------- intro ---------- */
+  #scene-intro { flex-direction: column; align-items: flex-start; justify-content: center; }
+  #scene-intro .intro-inner { margin-left: 40px; max-width: 1180px; position: relative; z-index: 4; }
+  #scene-intro .display { margin-top: 26px; font-size: 138px; }
+  #scene-intro .sub { margin-top: 34px; font-size: 30px; line-height: 1.4; color: #cbd5e1; max-width: 900px; letter-spacing: -.015em; }
+  .badges { display: flex; gap: 14px; margin-top: 34px; }
+  .badge {
+    font-family: var(--mono); font-size: 15px; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid rgba(103,232,249,.38); color: #cffafe;
+    background: rgba(8,47,73,.34); padding: 11px 17px; border-radius: 999px;
+  }
+  .badge.dim { border-color: rgba(148,163,184,.28); color: #cbd5e1; background: rgba(15,23,42,.4); }
+  .intro-foot { position: absolute; left: 172px; bottom: 104px; display: flex; gap: 28px; align-items: center; z-index: 4; }
+  .intro-foot .rule { width: 1px; height: 18px; background: var(--line); }
+
+  /* ---------- contrast ---------- */
+  #scene-contrast { flex-direction: column; justify-content: center; }
+  .contrast-head { width: 100%; max-width: 1560px; margin-bottom: 58px; }
+  .contrast-head h2 { font-size: 68px; letter-spacing: -.045em; line-height: 1; margin-top: 16px; }
+  .contrast-grid { width: 100%; max-width: 1560px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+  .path-card {
+    position: relative; min-height: 430px; border-radius: 28px; padding: 38px 40px;
+    background: linear-gradient(160deg, rgba(15,23,42,.86), rgba(2,6,23,.72));
+    border: 1px solid rgba(148,163,184,.18); overflow: hidden;
+  }
+  .path-card.old { border-color: rgba(251,113,133,.26); }
+  .path-card.new { border-color: rgba(103,232,249,.34); box-shadow: 0 0 80px rgba(34,211,238,.08) inset; }
+  .path-label { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .path-card.old .path-label b { color: var(--red); font-weight: 500; }
+  .path-card.new .path-label b { color: var(--cyan); font-weight: 500; }
+  .path-card h3 { font-size: 39px; letter-spacing: -.035em; margin-top: 24px; }
+  .path-card p { color: var(--muted); font-size: 20px; line-height: 1.5; margin-top: 12px; max-width: 610px; }
+  .flow { margin-top: 34px; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+  .node {
+    font-family: var(--mono); font-size: 15px; color: #dbeafe;
+    border: 1px solid rgba(148,163,184,.28); background: rgba(15,23,42,.7);
+    border-radius: 11px; padding: 12px 14px; white-space: nowrap;
+  }
+  .path-card.old .node { border-color: rgba(251,113,133,.25); color: #fecdd3; }
+  .path-card.new .node { border-color: rgba(103,232,249,.3); color: #cffafe; }
+  .arrow { color: #8493a8; font-size: 17px; }
+  .path-note { margin-top: 26px; font-size: 17px; line-height: 1.4; color: #aebdd0; display: flex; gap: 10px; align-items: flex-start; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); margin-top: 9px; flex: none; }
+  .path-card.new .dot { background: var(--green); }
+  .cross { position: absolute; right: 28px; bottom: 22px; font-family: var(--mono); font-size: 13px; color: #8493a8; letter-spacing: .12em; }
+
+  /* ---------- package / web screenshots ---------- */
+  .split { width: 100%; max-width: 1600px; display: grid; grid-template-columns: .82fr 1.18fr; gap: 78px; align-items: center; }
+  .split-copy h2 { font-size: 76px; line-height: .98; letter-spacing: -.05em; margin-top: 18px; }
+  .split-copy p { color: #a9b6c9; font-size: 23px; line-height: 1.55; margin-top: 24px; max-width: 610px; }
+  .bullets { margin-top: 32px; display: grid; gap: 14px; }
+  .bullet { display: flex; align-items: center; gap: 14px; font-size: 20px; color: #dbe5f1; }
+  .tick { color: var(--cyan); font-family: var(--mono); font-size: 18px; }
+  .shot-wrap { position: relative; perspective: 1400px; }
+  .shot {
+    position: relative; width: 100%; border-radius: 20px; overflow: hidden;
+    border: 1px solid rgba(148,163,184,.28); background: #0b1220;
+    box-shadow: 0 40px 110px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03);
+    transform: rotateY(-7deg) rotateX(2deg);
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, rgba(8,15,28,.15), transparent 42%, rgba(8,15,28,.24)); }
+  .shot-glow { position: absolute; inset: -24px; background: radial-gradient(60% 60% at 60% 40%, rgba(34,211,238,.17), transparent 70%); filter: blur(18px); z-index: -1; }
+  .shot-tag {
+    position: absolute; z-index: 3; font-family: var(--mono); font-size: 14px;
+    letter-spacing: .1em; text-transform: uppercase; color: #cffafe;
+    background: rgba(8,47,73,.9); border: 1px solid rgba(103,232,249,.38);
+    padding: 10px 13px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.3);
+  }
+  .shot-tag.a { right: -22px; top: 56px; }
+  .shot-tag.b { left: -26px; bottom: 48px; color: #ddd6fe; border-color: rgba(167,139,250,.4); background: rgba(46,16,101,.86); }
+  .mini-wizard {
+    position: absolute; right: -36px; bottom: -64px; width: 300px; border-radius: 14px;
+    border: 1px solid rgba(148,163,184,.35); box-shadow: 0 24px 60px rgba(0,0,0,.5); overflow: hidden;
+    transform: rotate(-3deg);
+  }
+  .mini-wizard img { display: block; width: 100%; }
+  .browser-frame { border-radius: 18px; overflow: hidden; border: 1px solid rgba(148,163,184,.3); background: #eef2f7; box-shadow: 0 40px 110px rgba(0,0,0,.55); transform: rotateY(5deg) rotateX(-1deg); }
+  .browser-bar { height: 36px; background: #101827; display: flex; align-items: center; gap: 7px; padding: 0 14px; }
+  .browser-bar i { width: 10px; height: 10px; border-radius: 50%; background: #334155; display: block; }
+  .browser-bar i:first-child { background: #fb7185; } .browser-bar i:nth-child(2) { background: #fbbf24; } .browser-bar i:nth-child(3) { background: #34d399; }
+  .browser-url { margin-left: 10px; font-family: var(--mono); font-size: 11px; color: #aebdd0; background: #0b1220; border-radius: 6px; padding: 5px 11px; }
+  .browser-frame img { display: block; width: 100%; height: auto; }
+  .float-chips { position: absolute; display: flex; flex-direction: column; gap: 10px; right: -20px; top: 86px; }
+  .chip { font-family: var(--mono); font-size: 14px; color: #e2e8f0; background: rgba(15,23,42,.92); border: 1px solid rgba(148,163,184,.3); border-radius: 999px; padding: 9px 13px; box-shadow: 0 8px 24px rgba(0,0,0,.3); white-space: nowrap; }
+  .chip b { color: var(--cyan); font-weight: 500; }
+
+  /* ---------- steps ---------- */
+  #scene-steps { flex-direction: column; justify-content: center; }
+  .steps-head { width: 100%; max-width: 1560px; display: flex; justify-content: space-between; align-items: end; margin-bottom: 48px; }
+  .steps-head h2 { font-size: 72px; line-height: .98; letter-spacing: -.05em; margin-top: 14px; }
+  .steps { width: 100%; max-width: 1560px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .step { position: relative; min-height: 330px; border: 1px solid rgba(148,163,184,.2); border-radius: 24px; padding: 34px; background: linear-gradient(155deg, rgba(15,23,42,.82), rgba(2,6,23,.65)); overflow: hidden; }
+  .step .num { font-family: var(--mono); font-size: 15px; color: var(--cyan); letter-spacing: .12em; }
+  .step h3 { font-size: 32px; letter-spacing: -.03em; margin-top: 60px; }
+  .step p { color: var(--muted); font-size: 18px; line-height: 1.5; margin-top: 12px; }
+  .step .line { position: absolute; left: 34px; right: 34px; bottom: 32px; height: 1px; background: linear-gradient(90deg, var(--cyan), transparent); opacity: .45; }
+  .step-icon { position: absolute; right: 28px; top: 28px; width: 44px; height: 44px; opacity: .9; }
+  .step-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }
+  .steps-foot { width: 100%; max-width: 1560px; margin-top: 26px; display: flex; justify-content: space-between; align-items: center; color: #9ba9bc; font-family: var(--mono); font-size: 14px; letter-spacing: .06em; }
+
+  /* ---------- outro ---------- */
+  #scene-outro { flex-direction: column; justify-content: center; text-align: center; }
+  .outro-icon { width: 112px; height: 112px; border-radius: 26px; overflow: hidden; box-shadow: 0 0 60px rgba(34,211,238,.24); margin-bottom: 26px; }
+  .outro-icon img { width: 100%; height: 100%; display: block; }
+  #scene-outro h2 { font-size: 110px; line-height: .96; letter-spacing: -.055em; }
+  #scene-outro .sub { font-size: 30px; color: #cbd5e1; margin-top: 22px; letter-spacing: -.01em; }
+  .cta-row { margin-top: 40px; display: flex; gap: 14px; justify-content: center; align-items: center; }
+  .cta {
+    font-size: 20px; font-weight: 600; color: #04121a; background: var(--cyan);
+    border-radius: 12px; padding: 15px 24px; letter-spacing: -.01em;
+  }
+  .cta.secondary { color: #e2e8f0; background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.35); }
+  .outro-meta { margin-top: 30px; font-family: var(--mono); font-size: 14px; color: #9ba9bc; letter-spacing: .06em; }
+
+  .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; z-index: 6; background: rgba(148,163,184,.09); }
+  .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--blue), var(--violet)); }
+  .corner { position: absolute; z-index: 5; font-family: var(--mono); font-size: 12px; letter-spacing: .12em; color: #8493a8; text-transform: uppercase; }
+  .corner.tl { left: 44px; top: 34px; } .corner.tr { right: 44px; top: 34px; } .corner.bl { left: 44px; bottom: 30px; } .corner.br { right: 44px; bottom: 30px; }
+  .flash { position: absolute; inset: 0; z-index: 3; opacity: 0; pointer-events: none; background: radial-gradient(60% 60% at 50% 50%, rgba(103,232,249,.22), transparent 70%); }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="main" data-start="0" data-duration="50" data-width="1920" data-height="1080">
+  <canvas id="bg" data-layout-allow-overflow></canvas>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+  <div class="flash" id="flash"></div>
+
+  <div class="corner tl">DSHD / DSM 7.2</div>
+  <div class="corner tr">NATIVE · 0.4.0</div>
+  <div class="corner bl">LOCAL-FIRST AI AGENT</div>
+  <div class="corner br">NO DOCKER REQUIRED</div>
+
+  <!-- 0. intro -->
+  <section class="clip scene" id="scene-intro" data-start="0" data-duration="7.5">
+    <div class="intro-inner">
+      <div class="eyebrow reveal">DeepSeek Harness · native SPK</div>
+      <h1 class="display reveal"><span class="grad">YOUR NAS.</span><br/>YOUR AI AGENT.</h1>
+      <p class="sub reveal">DeepSeek Harness now runs natively on Synology DSM. One package. No Docker. No Container Manager.</p>
+      <div class="badges reveal">
+        <span class="badge">NO DOCKER</span>
+        <span class="badge">NO CONTAINER MANAGER</span>
+        <span class="badge dim">DSM 7.2+</span>
+      </div>
+    </div>
+    <div class="intro-foot micro">
+      <span>x86_64</span><span class="rule"></span><span>armv8</span><span class="rule"></span><span>loopback by default</span>
+    </div>
+  </section>
+
+  <!-- 1. contrast -->
+  <section class="clip scene" id="scene-contrast" data-start="7.5" data-duration="8">
+    <div class="contrast-head">
+      <div class="eyebrow reveal">The packaging problem</div>
+      <h2 class="reveal">DOCKER-IN-DOCKER<br/><span class="muted">IS OVER.</span></h2>
+    </div>
+    <div class="contrast-grid">
+      <div class="path-card old reveal">
+        <div class="path-label"><span>Before</span><b>fragile stack</b></div>
+        <h3>Container Manager<br/>on a NAS</h3>
+        <p>A worker has to create and start a Compose project, then hand the token back to DSM.</p>
+        <div class="flow">
+          <span class="node">SPK</span><span class="arrow">→</span>
+          <span class="node">docker-project</span><span class="arrow">→</span>
+          <span class="node">Compose</span><span class="arrow">→</span>
+          <span class="node">dsh</span>
+        </div>
+        <div class="path-note"><span class="dot"></span><span>Extra moving parts, Docker socket access, and worker timeouts.</span></div>
+        <div class="cross">MORE LAYERS</div>
+      </div>
+      <div class="path-card new reveal">
+        <div class="path-label"><span>Now</span><b>one package</b></div>
+        <h3>DSHD Native<br/>on DSM 7.2</h3>
+        <p>A bundled Node runtime runs as the unprivileged package user. DSM starts it like any other service.</p>
+        <div class="flow">
+          <span class="node">SPK</span><span class="arrow">→</span>
+          <span class="node">native Node 24</span><span class="arrow">→</span>
+          <span class="node">dsh</span><span class="arrow">→</span>
+          <span class="node">127.0.0.1</span>
+        </div>
+        <div class="path-note"><span class="dot"></span><span>One install path, no Docker daemon, no worker dependency.</span></div>
+        <div class="cross">ONE PROCESS</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. package center -->
+  <section class="clip scene" id="scene-package" data-start="15.5" data-duration="10">
+    <div class="split">
+      <div class="split-copy">
+        <div class="eyebrow reveal">Package Center, not a container stack</div>
+        <h2 class="reveal">INSTALL IT<br/>LIKE A<br/><span class="grad">NAS PACKAGE.</span></h2>
+        <p class="reveal">Upload the SPK, accept the third-party warning, keep the defaults. The wizard sets dsh home, workspace, port, and public URL.</p>
+        <div class="bullets">
+          <div class="bullet reveal"><span class="tick">▸</span>Native Node 24 + dsh runtime bundled</div>
+          <div class="bullet reveal"><span class="tick">▸</span>x86_64 and armv8 builds</div>
+          <div class="bullet reveal"><span class="tick">▸</span>Boot auto-start and Package Center lifecycle</div>
+        </div>
+      </div>
+      <div class="shot-wrap reveal">
+        <div class="shot-glow"></div>
+        <div class="shot"><img src="assets/package-center-crop.png" alt="Package Center showing DSHD Native running" /></div>
+        <div class="shot-tag a">Package Center · Running</div>
+        <div class="shot-tag b">0.4.0 · native</div>
+        <div class="mini-wizard"><img src="assets/install-wizard-crop.png" alt="DSHD Native install wizard" /></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. web ui -->
+  <section class="clip scene" id="scene-web" data-start="25.5" data-duration="9">
+    <div class="split">
+      <div class="split-copy">
+        <div class="eyebrow reveal">The full agent workspace</div>
+        <h2 class="reveal">YOUR FILES.<br/>YOUR UI.<br/><span class="grad">YOUR NAS.</span></h2>
+        <p class="reveal">The complete dsh web interface, served from loopback and unlocked by a one-time token URL. Your projects stay on your NAS.</p>
+        <div class="bullets">
+          <div class="bullet reveal"><span class="tick">▸</span>Default workspace fixed for DSM</div>
+          <div class="bullet reveal"><span class="tick">▸</span>Token auth, 0600 file, rotating on restart</div>
+          <div class="bullet reveal"><span class="tick">▸</span>Plugins, automation, settings, API keys</div>
+        </div>
+      </div>
+      <div class="shot-wrap reveal">
+        <div class="shot-glow"></div>
+        <div class="browser-frame">
+          <div class="browser-bar"><i></i><i></i><i></i><span class="browser-url">127.0.0.1:3080 · token unlocked</span></div>
+          <img src="assets/web-ui-clean.png" alt="dsh web interface running on DSM" />
+        </div>
+        <div class="float-chips">
+          <span class="chip"><b>●</b> loopback only</span>
+          <span class="chip"><b>●</b> local workspace</span>
+          <span class="chip"><b>●</b> token protected</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. steps -->
+  <section class="clip scene" id="scene-steps" data-start="34.5" data-duration="8">
+    <div class="steps-head">
+      <div>
+        <div class="eyebrow reveal">From download to agent</div>
+        <h2 class="reveal">THREE STEPS.<br/><span class="muted">NO DOCKER.</span></h2>
+      </div>
+      <div class="micro reveal">DSM 7.2+ · ~1 GB runtime · unsigned community package</div>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-icon"><img src="assets/app-icon.png" alt="" /></div>
+        <div class="num">01 / INSTALL</div>
+        <h3>Upload the SPK</h3>
+        <p>Package Center → Manual Install. Pick x86_64 or armv8 and accept the warning.</p>
+        <div class="line"></div>
+      </div>
+      <div class="step reveal">
+        <div class="num">02 / START</div>
+        <h3>Start &amp; copy token</h3>
+        <p>Run <span style="font-family:var(--mono);color:#cffafe">dshd-token</span>. Open the token URL from the NAS or a reverse proxy.</p>
+        <div class="line"></div>
+      </div>
+      <div class="step reveal">
+        <div class="num">03 / BUILD</div>
+        <h3>Open the workspace</h3>
+        <p>Add a DeepSeek API key, pick a model, and start building with your files.</p>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="steps-foot"><span>NO ROUTER PORT FORWARDING</span><span>DATA STAYS ON /volume1</span><span>MIT LICENSED</span></div>
+  </section>
+
+  <!-- 5. outro -->
+  <section class="clip scene" id="scene-outro" data-start="42.5" data-duration="7.5">
+    <div class="outro-icon reveal"><img src="assets/app-icon.png" alt="DSHD Native icon" /></div>
+    <h2 class="reveal">DSHD <span class="grad">NATIVE</span></h2>
+    <div class="sub reveal">DeepSeek Harness on Synology DSM 7.2</div>
+    <div class="cta-row reveal">
+      <span class="cta">Open source on GitHub</span>
+      <span class="cta secondary">Search: dshd-synology-spk</span>
+    </div>
+    <div class="outro-meta reveal">NO DOCKER · NO CONTAINER MANAGER · YOUR NAS, YOUR AGENT</div>
+  </section>
+
+  <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+</div>
+
+<audio id="music" src="assets/music.wav" data-start="0" data-duration="50" data-volume="0.32"></audio>
+
+<script>
+(() => {
+  // ---------- deterministic three.js background ----------
+  const canvas = document.getElementById('bg');
+  let renderer = null, scene, camera, group, points, rings = [], glow;
+  const W = 1920, H = 1080;
+  function seeded(i) {
+    const x = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+  function initThree() {
+    if (!window.THREE) return;
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(1);
+    renderer.setSize(W, H, false);
+    renderer.setClearColor(0x05070d, 0);
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(42, W / H, 0.1, 120);
+    camera.position.set(0, 1.1, 11.5);
+    camera.lookAt(0, 0, 0);
+
+    group = new THREE.Group();
+    group.position.set(0, 0.2, 0);
+    scene.add(group);
+
+    // three NAS bays as glowing wireframes
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.20 });
+    const edgeMat2 = new THREE.LineBasicMaterial({ color: 0x818cf8, transparent: true, opacity: 0.10 });
+    for (let i = 0; i < 3; i++) {
+      const geo = new THREE.BoxGeometry(3.9, 0.92, 2.15);
+      const box = new THREE.LineSegments(new THREE.EdgesGeometry(geo), i === 1 ? edgeMat2 : edgeMat);
+      box.position.set(0, (i - 1) * 1.02 - 0.25, 0);
+      group.add(box);
+    }
+    // front LED dots
+    const dotGeo = new THREE.SphereGeometry(0.035, 8, 8);
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.9 });
+    for (let i = 0; i < 12; i++) {
+      const dot = new THREE.Mesh(dotGeo, dotMat.clone());
+      dot.position.set(-1.65 + (i % 6) * 0.24, -1.25 + Math.floor(i / 6) * 1.02, 1.09);
+      dot.material.opacity = 0.25 + seeded(i) * 0.6;
+      group.add(dot);
+    }
+
+    // particle field
+    const count = 1300;
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = 3.6 + seeded(i + 40) * 16;
+      const theta = seeded(i + 90) * Math.PI * 2;
+      const phi = Math.acos(2 * seeded(i + 140) - 1);
+      pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      pos[i * 3 + 1] = r * Math.cos(phi) * 0.55;
+      pos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta) * 0.75 - 2;
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    points = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0x93c5fd, size: 0.018, transparent: true, opacity: 0.55, sizeAttenuation: true }));
+    scene.add(points);
+
+    // faint orbital rings
+    for (let i = 0; i < 3; i++) {
+      const torus = new THREE.Mesh(
+        new THREE.TorusGeometry(4.6 + i * 1.25, 0.006, 4, 180),
+        new THREE.MeshBasicMaterial({ color: i === 1 ? 0xa78bfa : 0x67e8f9, transparent: true, opacity: 0.16 })
+      );
+      torus.rotation.x = Math.PI * 0.5;
+      torus.rotation.z = i * 0.35;
+      rings.push(torus);
+      scene.add(torus);
+    }
+
+    // soft additive central glow
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(103,232,249,.55)');
+    grad.addColorStop(0.35, 'rgba(59,130,246,.20)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+    const tex = new THREE.CanvasTexture(c);
+    glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.65, depthWrite: false }));
+    glow.scale.set(12, 12, 1);
+    glow.position.set(0, 0, -2);
+    scene.add(glow);
+  }
+
+  function renderThree(t) {
+    if (!renderer) return;
+    const p = Math.min(1, Math.max(0, t / 50));
+    const intro = Math.min(1, t / 7.5);
+    camera.position.x = Math.sin(t * 0.11) * 0.55 + (1 - intro) * 0.9;
+    camera.position.y = 1.0 + Math.sin(t * 0.17) * 0.13;
+    camera.position.z = 12.4 - 2.4 * intro + Math.sin(t * 0.08) * 0.12;
+    camera.lookAt(0, 0, 0);
+    group.visible = t < 42.4;
+    group.rotation.y = 0.18 + t * 0.025;
+    group.rotation.x = 0.05 + Math.sin(t * 0.12) * 0.02;
+    group.position.y = 0.2 + Math.sin(t * 0.2) * 0.07;
+    points.rotation.y = -t * 0.012;
+    points.rotation.z = t * 0.004;
+    rings.forEach((r, i) => { r.rotation.z = i * 0.35 + t * (0.03 + i * 0.006); });
+    glow.material.opacity = 0.45 + Math.sin(t * 0.7) * 0.1;
+    renderer.render(scene, camera);
+  }
+
+  // ---------- timeline ----------
+  const tl = gsap.timeline({ paused: true });
+  window.__timelines = window.__timelines || {};
+  window.__timelines['main'] = tl;
+
+  const reveal = (selector, at, opts = {}) => {
+    tl.fromTo(selector,
+      { opacity: 0, y: opts.y ?? 28 },
+      { opacity: 1, y: 0, duration: opts.dur ?? 0.8, ease: opts.ease ?? 'power3.out', stagger: opts.stagger ?? 0.09 },
+      at);
+  };
+  const sceneIn = (sel, at, dur = 0.65) => tl.to(sel, { opacity: 1, duration: dur, ease: 'power2.out' }, at);
+  const sceneOut = (sel, at, dur = 0.55) => tl.to(sel, { opacity: 0, duration: dur, ease: 'power2.in' }, at);
+
+  gsap.set('.scene', { opacity: 0 });
+
+  // intro
+  sceneIn('#scene-intro', 0, 0.8);
+  reveal('#scene-intro .eyebrow', 0.35, { y: 14 });
+  reveal('#scene-intro .display', 0.55, { y: 40, dur: 1.0 });
+  reveal('#scene-intro .sub', 1.3, { y: 22, dur: 0.9 });
+  reveal('#scene-intro .badges', 1.85, { y: 16, dur: 0.8 });
+  reveal('#scene-intro .intro-foot', 2.3, { y: 12, dur: 0.7 });
+  sceneOut('#scene-intro', 6.95, 0.55);
+
+  // contrast
+  sceneIn('#scene-contrast', 7.55, 0.7);
+  reveal('#scene-contrast .eyebrow', 7.9, { y: 12 });
+  reveal('#scene-contrast h2', 8.05, { y: 34, dur: 0.9 });
+  reveal('#scene-contrast .path-card.old', 8.7, { y: 36, dur: 0.85 });
+  reveal('#scene-contrast .path-card.new', 9.15, { y: 36, dur: 0.85 });
+  sceneOut('#scene-contrast', 14.95, 0.55);
+
+  // package
+  sceneIn('#scene-package', 15.55, 0.7);
+  reveal('#scene-package .eyebrow', 15.9, { y: 12 });
+  reveal('#scene-package h2', 16.05, { y: 38, dur: 0.9 });
+  reveal('#scene-package .split-copy p', 16.7, { y: 22, dur: 0.8 });
+  reveal('#scene-package .bullet', 17.15, { y: 18, dur: 0.6, stagger: 0.12 });
+  tl.fromTo('#scene-package .shot-wrap', { opacity: 0, x: 70, scale: 0.94 }, { opacity: 1, x: 0, scale: 1, duration: 1.0, ease: 'power3.out' }, 16.6);
+  tl.fromTo('#scene-package .shot', { rotationY: -14, rotationX: 4 }, { rotationY: -7, rotationX: 2, duration: 1.4, ease: 'power2.out' }, 16.6);
+  sceneOut('#scene-package', 24.95, 0.55);
+
+  // web
+  sceneIn('#scene-web', 25.55, 0.7);
+  reveal('#scene-web .eyebrow', 25.9, { y: 12 });
+  reveal('#scene-web h2', 26.05, { y: 38, dur: 0.9 });
+  reveal('#scene-web .split-copy p', 26.7, { y: 22, dur: 0.8 });
+  reveal('#scene-web .bullet', 27.15, { y: 18, dur: 0.6, stagger: 0.12 });
+  tl.fromTo('#scene-web .shot-wrap', { opacity: 0, x: 60, scale: 0.95 }, { opacity: 1, x: 0, scale: 1, duration: 1.0, ease: 'power3.out' }, 26.5);
+  tl.fromTo('#scene-web .browser-frame', { rotationY: 12, rotationX: -2 }, { rotationY: 5, rotationX: -1, duration: 1.4, ease: 'power2.out' }, 26.5);
+  reveal('#scene-web .float-chips .chip', 27.5, { y: 12, dur: 0.55, stagger: 0.12 });
+  sceneOut('#scene-web', 33.95, 0.55);
+
+  // steps
+  sceneIn('#scene-steps', 34.55, 0.7);
+  reveal('#scene-steps .eyebrow', 34.9, { y: 12 });
+  reveal('#scene-steps h2', 35.05, { y: 34, dur: 0.9 });
+  reveal('#scene-steps .steps-head .micro', 35.4, { y: 10, dur: 0.6 });
+  reveal('#scene-steps .step', 35.55, { y: 32, dur: 0.7, stagger: 0.16 });
+  reveal('#scene-steps .steps-foot', 36.5, { y: 10, dur: 0.6 });
+  sceneOut('#scene-steps', 41.95, 0.55);
+
+  // outro
+  sceneIn('#scene-outro', 42.55, 0.8);
+  reveal('#scene-outro .outro-icon', 42.7, { y: 18, dur: 0.6 });
+  reveal('#scene-outro h2', 42.85, { y: 34, dur: 0.9 });
+  reveal('#scene-outro .sub', 43.35, { y: 18, dur: 0.7 });
+  reveal('#scene-outro .cta-row', 43.8, { y: 18, dur: 0.7 });
+  reveal('#scene-outro .outro-meta', 44.3, { y: 12, dur: 0.6 });
+
+  // continuous background and progress
+  const threeState = { t: 0 };
+  tl.to(threeState, { t: 50, duration: 50, ease: 'none', onUpdate: () => renderThree(threeState.t) }, 0);
+  tl.fromTo('#progress-fill', { width: '0%' }, { width: '100%', duration: 50, ease: 'none' }, 0);
+
+  // transition flashes
+  [[7.4, 0.7], [15.4, 0.7], [25.4, 0.7], [34.4, 0.7], [42.4, 0.8]].forEach(([at, dur]) => {
+    tl.fromTo('#flash', { opacity: 0 }, { opacity: 0.8, duration: dur * 0.35, ease: 'power2.out' }, at);
+    tl.to('#flash', { opacity: 0, duration: dur * 0.65, ease: 'power2.in' }, at + dur * 0.35);
+  });
+
+  initThree();
+  renderThree(0);
+  tl.seek(0);
+})();
+</script>
+</body>
+</html>

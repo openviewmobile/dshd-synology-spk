@@ -1,9 +1,6 @@
 #!/bin/sh
 # DSHD DSM 7 package lifecycle script.
 #
-# STATUS: implemented and locally smoke-tested with a fake Docker CLI, but NOT
-# yet installed on DSM hardware. See spk/README.md for the unverified list.
-#
 # DSM calls this script as root (see conf/privilege -> ctrl-script) because the
 # Container Manager Docker socket is owned by root. The package user itself is
 # never given docker-group membership: that group is root-equivalent and would
@@ -15,13 +12,14 @@
 set -u
 
 PKG_NAME="dshd"
+PKG_VERSION="0.3.0"
 PKG_DEST="${SYNOPKG_PKGDEST:-/var/packages/$PKG_NAME/target}"
 PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
 PKG_ROOT=$(dirname "$PKG_DEST")
 
-COMPOSE_FILE="${DSHD_COMPOSE:-$PKG_DEST/package/docker-compose.yml}"
+COMPOSE_FILE="${DSHD_COMPOSE:-$PKG_DEST/compose/compose.yml}"
 CONFIG_FILE="${DSHD_CONFIG:-$PKG_VAR/config.env}"
-CONFIG_EXAMPLE="$PKG_DEST/package/config.env.example"
+CONFIG_EXAMPLE="$PKG_DEST/config.env.example"
 TOKEN_FILE="$PKG_VAR/token-url.txt"
 STATUS_FILE="$PKG_VAR/status"
 SERVICE="dshd"
@@ -49,8 +47,8 @@ ensure_config() {
 }
 
 # Refuse to create/chown arbitrary root-owned paths. A legitimate data or
-# workspace directory lives on a DSM volume, or (for tests/edge cases) under the
-# package's own var directory.
+# workspace directory lives on a DSM volume, the package var directory, or the
+# data-share symlink directory.
 validate_storage_dir() {
   vname="$1"
   vpath="$2"
@@ -59,11 +57,24 @@ validate_storage_dir() {
     *) die "$vname must be an absolute directory: $vpath" ;;
   esac
   case "$vpath" in
-    /volume*|"$PKG_VAR"/*) ;;
-    *) die "$vname must be under /volume or $PKG_VAR: $vpath" ;;
+    /volume*|"$PKG_VAR"/*|"$PKG_ROOT"/shares/*) ;;
+    *) die "$vname must be under /volume, $PKG_VAR or $PKG_ROOT/shares: $vpath" ;;
   esac
   case "/$vpath/" in
     *"/../"*) die "$vname must not contain '..': $vpath" ;;
+  esac
+}
+
+validate_yes_no() {
+  case "$2" in
+    yes|no) ;;
+    *) die "$1 must be yes or no: $2" ;;
+  esac
+}
+
+validate_int() {
+  case "$2" in
+    ''|*[!0-9]*) die "$1 must be a number: $2" ;;
   esac
 }
 
@@ -80,8 +91,11 @@ load_config() {
       *) die "invalid line in $CONFIG_FILE: $line" ;;
     esac
     case "$key" in
-      DSHD_IMAGE|DSHD_PORT|DSHD_DATA_DIR|DSHD_WORKSPACE_DIR|DSH_PUBLIC_URL|\
-      DSH_TRUSTED_HOST|DSHD_PUID|DSHD_PGID|DSHD_START_TIMEOUT) ;;
+      DSHD_IMAGE|DSHD_ALLOW_PULL|DSHD_PORT|DSHD_DATA_DIR|DSHD_WORKSPACE_DIR|\
+      DSH_PUBLIC_URL|DSH_TRUSTED_HOST|DSHD_PUID|DSHD_PGID|DSHD_START_TIMEOUT|\
+      DSHD_MIN_FREE_MB|DSHD_ALLOW_EMULATION|DSHD_MEM_LIMIT|DSHD_CPUS|\
+      DSHD_PIDS_LIMIT|DSHD_LOG_MAX_SIZE|DSHD_LOG_MAX_FILE|\
+      DSHD_SKIP_PORT_CHECK) ;;
       *) continue ;;
     esac
     case "$val" in
@@ -91,7 +105,8 @@ load_config() {
     export "$key=$val"
   done < "$CONFIG_FILE"
 
-  : "${DSHD_IMAGE:=dshd-synology:0.2.0}"
+  : "${DSHD_IMAGE:=dshd-synology:0.3.0}"
+  : "${DSHD_ALLOW_PULL:=no}"
   : "${DSHD_PORT:=3080}"
   : "${DSHD_DATA_DIR:=/volume1/docker/dshd}"
   : "${DSHD_WORKSPACE_DIR:=/volume1/dshd-workspace}"
@@ -99,37 +114,69 @@ load_config() {
   : "${DSH_TRUSTED_HOST:=127.0.0.1}"
   : "${DSHD_PUID:=1001}"
   : "${DSHD_PGID:=1001}"
-  : "${DSHD_START_TIMEOUT:=90}"
+  : "${DSHD_START_TIMEOUT:=180}"
+  : "${DSHD_MIN_FREE_MB:=2048}"
+  : "${DSHD_ALLOW_EMULATION:=no}"
+  : "${DSHD_MEM_LIMIT:=4g}"
+  : "${DSHD_CPUS:=2.0}"
+  : "${DSHD_PIDS_LIMIT:=512}"
+  : "${DSHD_LOG_MAX_SIZE:=10m}"
+  : "${DSHD_LOG_MAX_FILE:=3}"
+  : "${DSHD_SKIP_PORT_CHECK:=no}"
 
-  case "$DSHD_PORT" in
-    ''|*[!0-9]*) die "DSHD_PORT must be a number: $DSHD_PORT" ;;
-  esac
+  validate_int DSHD_PORT "$DSHD_PORT"
   [ "$DSHD_PORT" -ge 1025 ] && [ "$DSHD_PORT" -le 65535 ] ||
     die "DSHD_PORT must be in 1025..65535: $DSHD_PORT"
 
-  case "$DSHD_START_TIMEOUT" in
-    ''|*[!0-9]*) die "DSHD_START_TIMEOUT must be a number: $DSHD_START_TIMEOUT" ;;
-  esac
+  validate_int DSHD_START_TIMEOUT "$DSHD_START_TIMEOUT"
+  validate_int DSHD_MIN_FREE_MB "$DSHD_MIN_FREE_MB"
+  validate_int DSHD_PIDS_LIMIT "$DSHD_PIDS_LIMIT"
+  validate_int DSHD_LOG_MAX_FILE "$DSHD_LOG_MAX_FILE"
+  validate_yes_no DSHD_ALLOW_PULL "$DSHD_ALLOW_PULL"
+  validate_yes_no DSHD_ALLOW_EMULATION "$DSHD_ALLOW_EMULATION"
+  validate_yes_no DSHD_SKIP_PORT_CHECK "$DSHD_SKIP_PORT_CHECK"
 
   validate_storage_dir DSHD_DATA_DIR "$DSHD_DATA_DIR"
   validate_storage_dir DSHD_WORKSPACE_DIR "$DSHD_WORKSPACE_DIR"
 
-  case "$DSHD_PUID" in ''|*[!0-9]*) die "DSHD_PUID must be a number: $DSHD_PUID" ;; esac
-  case "$DSHD_PGID" in ''|*[!0-9]*) die "DSHD_PGID must be a number: $DSHD_PGID" ;; esac
+  validate_int DSHD_PUID "$DSHD_PUID"
+  validate_int DSHD_PGID "$DSHD_PGID"
 
+  [ -n "$DSHD_IMAGE" ] || die "DSHD_IMAGE must not be empty"
   [ -n "$DSH_PUBLIC_URL" ] || die "DSH_PUBLIC_URL must not be empty"
   [ -n "$DSH_TRUSTED_HOST" ] || die "DSH_TRUSTED_HOST must not be empty"
+  case "$DSH_PUBLIC_URL" in
+    http://?*|https://?*) ;;
+    *) die "DSH_PUBLIC_URL must start with http:// or https://: $DSH_PUBLIC_URL" ;;
+  esac
+  case "$DSH_TRUSTED_HOST" in
+    *[!A-Za-z0-9._:-]*) die "DSH_TRUSTED_HOST contains invalid characters: $DSH_TRUSTED_HOST" ;;
+  esac
+  case "$DSHD_IMAGE" in
+    *[!A-Za-z0-9._/:@-]*) die "DSHD_IMAGE contains invalid characters: $DSHD_IMAGE" ;;
+  esac
+  case "$DSHD_MEM_LIMIT" in
+    *[!0-9kmgKMG.]*) die "DSHD_MEM_LIMIT is invalid: $DSHD_MEM_LIMIT" ;;
+  esac
+  case "$DSHD_CPUS" in
+    *[!0-9.]*) die "DSHD_CPUS is invalid: $DSHD_CPUS" ;;
+  esac
+  case "$DSHD_LOG_MAX_SIZE" in
+    *[!0-9kmgKMG.]*) die "DSHD_LOG_MAX_SIZE is invalid: $DSHD_LOG_MAX_SIZE" ;;
+  esac
 
   # Compose reads these from the environment as well as from --env-file. Export
   # them so a `docker compose` subprocess sees exactly what this script validated.
   export DSHD_IMAGE DSHD_PORT DSHD_DATA_DIR DSHD_WORKSPACE_DIR
-  export DSH_PUBLIC_URL DSH_TRUSTED_HOST
+  export DSH_PUBLIC_URL DSH_TRUSTED_HOST DSHD_ALLOW_PULL
+  export DSHD_MEM_LIMIT DSHD_CPUS DSHD_PIDS_LIMIT
+  export DSHD_LOG_MAX_SIZE DSHD_LOG_MAX_FILE
 }
 
 ensure_dirs() {
   [ -f "$COMPOSE_FILE" ] || die "missing compose file: $COMPOSE_FILE"
-  mkdir -p "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" ||
-    die "cannot create data directories under $DSHD_DATA_DIR / $DSHD_WORKSPACE_DIR"
+  mkdir -p "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null ||
+    log "data directories will be created by the container runtime"
 
   # Do not recurse: existing user data may be owned by the DSM user and must not
   # be rewritten. New files are created by the container's uid 1001.
@@ -186,14 +233,18 @@ resolve_runtime() {
 compose() {
   [ -n "${COMPOSE_STYLE:-}" ] || return 1
   if [ "$COMPOSE_STYLE" = "plugin" ]; then
-    "$DOCKER" compose --env-file "$CONFIG_FILE" -f "$COMPOSE_FILE" "$@"
+    "$DOCKER" compose --project-name "$PKG_NAME" --env-file "$CONFIG_FILE" -f "$COMPOSE_FILE" "$@"
   else
-    "$DOCKER_COMPOSE" --env-file "$CONFIG_FILE" -f "$COMPOSE_FILE" "$@"
+    "$DOCKER_COMPOSE" --project-name "$PKG_NAME" --env-file "$CONFIG_FILE" -f "$COMPOSE_FILE" "$@"
   fi
 }
 
 image_present() {
   "$DOCKER" image inspect "$DSHD_IMAGE" >/dev/null 2>&1
+}
+
+image_arch() {
+  "$DOCKER" image inspect -f '{{.Architecture}}' "$DSHD_IMAGE" 2>/dev/null | head -n 1 | tr -d '\r'
 }
 
 container_id() {
@@ -204,6 +255,65 @@ container_running() {
   cid=$(container_id)
   [ -n "$cid" ] || return 1
   [ "$("$DOCKER" inspect -f '{{.State.Running}}' "$cid" 2>/dev/null | tr -d '\r')" = "true" ]
+}
+
+container_health() {
+  cid=$(container_id)
+  [ -n "$cid" ] || { echo "none"; return 0; }
+  health=$("$DOCKER" inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null | tr -d '\r')
+  [ -n "$health" ] || health="unknown"
+  printf '%s\n' "$health"
+}
+
+docker_usable() {
+  resolve_runtime >/dev/null 2>&1 || return 1
+  "$DOCKER" info >/dev/null 2>&1
+}
+
+worker_token_file() {
+  printf '%s/compose/data/run/token-url.txt\n' "$PKG_DEST"
+}
+
+probe_http() {
+  url="http://127.0.0.1:$DSHD_PORT/"
+  if command -v curl >/dev/null 2>&1; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url" 2>/dev/null || true)
+  else
+    code=""
+  fi
+  printf '%s\n' "$code"
+}
+
+wait_for_worker() {
+  timeout="$DSHD_START_TIMEOUT"
+  elapsed=0
+  src=$(worker_token_file)
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if [ -s "$src" ]; then
+      url=$(head -n 1 "$src" | tr -d '\r')
+      case "$url" in
+        http://*|https://*)
+          write_token "$url" || true
+          write_status running "token ready (container manager project)" || true
+          log "ready; token URL written to $TOKEN_FILE"
+          return 0
+          ;;
+      esac
+    fi
+    code=$(probe_http)
+    case "$code" in
+      000|"") ;;
+      *)
+        # Port is up but the token file is not visible yet; keep waiting.
+        ;;
+    esac
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  write_status failed "Container Manager did not expose a token within ${timeout}s" || true
+  err "the Container Manager project did not write $src within ${timeout}s"
+  err "check Package Center -> DSHD -> logs, or Container Manager -> Project -> dshd"
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -223,11 +333,21 @@ write_status() {
   state="$1"
   detail="${2:-}"
   tmp="$STATUS_FILE.tmp.$$"
-  cid=$(container_id 2>/dev/null || true)
+  cid=""
+  health="unknown"
+  if [ -n "${DOCKER:-}" ]; then
+    cid=$(container_id 2>/dev/null || true)
+    health=$(container_health 2>/dev/null || echo unknown)
+  fi
   [ -d "$PKG_VAR" ] || mkdir -p "$PKG_VAR" || return 1
   {
     printf 'state=%s\n' "$state"
+    printf 'version=%s\n' "$PKG_VERSION"
     printf 'container_id=%s\n' "$cid"
+    printf 'health=%s\n' "$health"
+    printf 'image=%s\n' "${DSHD_IMAGE:-unknown}"
+    printf 'port=%s\n' "${DSHD_PORT:-unknown}"
+    printf 'public_url=%s\n' "${DSH_PUBLIC_URL:-unknown}"
     printf 'token_url_file=%s\n' "$TOKEN_FILE"
     printf 'updated_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date)"
     [ -n "$detail" ] && printf 'detail=%s\n' "$detail"
@@ -248,6 +368,7 @@ extract_token() {
          compose logs --no-color "$SERVICE" 2>/dev/null || true)
   [ -n "$logs" ] || return 1
   printf '%s\n' "$logs" |
+    tr -d '\r' |
     sed -n -e 's#.*\(http://[^[:space:]]*[?&]token=[A-Za-z0-9._~=-]*\).*#\1#p' \
            -e 's#.*\(https://[^[:space:]]*[?&]token=[A-Za-z0-9._~=-]*\).*#\1#p' |
     tail -n 1
@@ -290,20 +411,100 @@ wait_for_ready() {
 }
 
 # ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+
+host_arch() {
+  case "$(uname -m 2>/dev/null)" in
+    x86_64|amd64) echo amd64 ;;
+    aarch64|arm64) echo arm64 ;;
+    armv7l|armv7) echo arm ;;
+    *) echo unknown ;;
+  esac
+}
+
+check_arch() {
+  [ -n "${DSHD_IMAGE:-}" ] || return 0
+  img_arch=$(image_arch)
+  [ -n "$img_arch" ] || return 0
+  host=$(host_arch)
+  [ "$host" = "unknown" ] && return 0
+  [ "$img_arch" = "$host" ] && return 0
+  if [ "$DSHD_ALLOW_EMULATION" = "yes" ]; then
+    log "image architecture $img_arch differs from host $host; DSHD_ALLOW_EMULATION=yes"
+    return 0
+  fi
+  write_status failed "image architecture $img_arch does not match host $host" || true
+  err "image '$DSHD_IMAGE' is built for $img_arch but this NAS is $host"
+  err "import a $host image, or set DSHD_ALLOW_EMULATION=yes if you accept slow emulation"
+  return 1
+}
+
+check_disk_space() {
+  avail_kb=$(df -Pk "$DSHD_DATA_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
+  case "$avail_kb" in ''|*[!0-9]*) return 0 ;; esac
+  need_kb=$((DSHD_MIN_FREE_MB * 1024))
+  if [ "$avail_kb" -lt "$need_kb" ]; then
+    write_status failed "not enough free space under $DSHD_DATA_DIR" || true
+    err "only $((avail_kb / 1024)) MB free under $DSHD_DATA_DIR; DSHD_MIN_FREE_MB=$DSHD_MIN_FREE_MB"
+    return 1
+  fi
+  return 0
+}
+
+check_port_free() {
+  [ "$DSHD_SKIP_PORT_CHECK" = "yes" ] && return 0
+  if container_running; then
+    return 0
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    ports=$(ss -ltn 2>/dev/null | awk 'NR>1 {print $4}')
+  elif command -v netstat >/dev/null 2>&1; then
+    ports=$(netstat -ltn 2>/dev/null | awk 'NR>2 {print $4}')
+  else
+    return 0
+  fi
+  if printf '%s\n' "$ports" | grep -qE "[:.]${DSHD_PORT}$"; then
+    write_status failed "port $DSHD_PORT is already in use" || true
+    err "port $DSHD_PORT is already in use; choose another DSHD_PORT or set DSHD_SKIP_PORT_CHECK=yes"
+    return 1
+  fi
+  return 0
+}
+
+check_compose_config() {
+  if ! out=$(compose config -q 2>&1); then
+    write_status failed "docker compose config failed" || true
+    err "docker compose rejected $COMPOSE_FILE:"
+    printf '%s\n' "$out" >&2
+    return 1
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Actions
 # ---------------------------------------------------------------------------
 
 do_start() {
   ensure_config
   load_config
-  if ! resolve_runtime; then
-    write_status failed "docker/compose unavailable" || true
-    return 1
+  ensure_dirs
+  # Regenerate the project's .env from config.env so Container Manager picks
+  # up edits made since install.
+  "$PKG_ROOT/scripts/installer" init >/dev/null 2>&1 || true
+  if ! docker_usable; then
+    log "docker socket unavailable; using the Container Manager project worker"
+    rm -f "$TOKEN_FILE" "$(worker_token_file)" 2>/dev/null || true
+    wait_for_worker
+    return $?
   fi
   ensure_dirs
   # Any start attempt invalidates the previous link; only a token found in the
   # current container log is allowed to recreate it.
   rm -f "$TOKEN_FILE" 2>/dev/null || true
+
+  check_compose_config || return 1
 
   if container_running; then
     # Always refresh from the log instead of trusting a possibly stale token
@@ -314,12 +515,21 @@ do_start() {
   fi
 
   if ! image_present; then
-    write_status failed "image not present: $DSHD_IMAGE" || true
-    err "image '$DSHD_IMAGE' is not present on this NAS"
-    err "build or import it first, e.g. docker build -t $DSHD_IMAGE /path/to/project"
-    err "then edit $CONFIG_FILE if the tag differs"
-    return 1
+    if [ "$DSHD_ALLOW_PULL" = "yes" ]; then
+      log "image '$DSHD_IMAGE' is not present locally; compose will pull it (DSHD_ALLOW_PULL=yes)"
+    else
+      write_status failed "image not present: $DSHD_IMAGE" || true
+      err "image '$DSHD_IMAGE' is not present on this NAS"
+      err "build or import it first, e.g. docker build -t $DSHD_IMAGE /path/to/project"
+      err "or set DSHD_ALLOW_PULL=yes to allow Compose to pull the tag"
+      return 1
+    fi
+  else
+    check_arch || return 1
   fi
+
+  check_port_free || return 1
+  check_disk_space || return 1
 
   log "starting compose project from $COMPOSE_FILE"
   if ! compose up -d --remove-orphans; then
@@ -335,12 +545,12 @@ do_stop() {
   ensure_config
   load_config
 
-  if ! resolve_runtime; then
-    # During shutdown the Docker daemon may already be gone. Clean up local
-    # runtime state but never touch the user's home/workspace.
-    err "docker is unavailable; removing only the token/status files"
+  if ! docker_usable; then
+    # The Docker Project worker owns the container lifecycle. During shutdown
+    # the daemon may already be gone; only local runtime state is ours.
+    log "docker socket unavailable; Container Manager will stop the project"
     remove_runtime_files
-    write_status stopped "docker unavailable during stop" || true
+    write_status stopped "stopped by DSM (container manager project)" || true
     return 0
   fi
 
@@ -356,13 +566,60 @@ do_stop() {
 }
 
 do_status() {
-  if ! resolve_runtime 2>/dev/null; then
+  ensure_config || return 3
+  load_config || return 3
+  if ! docker_usable; then
+    code=$(probe_http)
+    case "$code" in
+      200|303|401)
+        write_status running "status check (container manager project)" >/dev/null 2>&1 || true
+        return 0
+        ;;
+    esac
     return 3
   fi
   if container_running; then
+    write_status running "status check" >/dev/null 2>&1 || true
     return 0
   fi
   return 3
+}
+
+do_doctor() {
+  ensure_config
+  load_config || return 1
+  rc=0
+  printf 'dshd %s\n' "$PKG_VERSION"
+  printf 'config: %s\n' "$CONFIG_FILE"
+  printf 'compose: %s\n' "$COMPOSE_FILE"
+  if resolve_runtime; then
+    printf 'docker: %s (%s compose)\n' "$DOCKER" "${COMPOSE_STYLE:-?}"
+  else
+    rc=1
+  fi
+  if image_present; then
+    printf 'image: %s (%s)\n' "$DSHD_IMAGE" "$(image_arch)"
+    check_arch || rc=1
+  else
+    printf 'image: %s MISSING\n' "$DSHD_IMAGE"
+    [ "$DSHD_ALLOW_PULL" = "yes" ] || rc=1
+  fi
+  printf 'data: %s\nworkspace: %s\nport: %s\npublic URL: %s\ntrusted host: %s\n' \
+    "$DSHD_DATA_DIR" "$DSHD_WORKSPACE_DIR" "$DSHD_PORT" "$DSH_PUBLIC_URL" "$DSH_TRUSTED_HOST"
+  if container_running; then
+    printf 'container: running (%s)\n' "$(container_health)"
+  else
+    printf 'container: not running\n'
+  fi
+  check_disk_space || rc=1
+  check_port_free || rc=1
+  check_compose_config || rc=1
+  if [ -f "$TOKEN_FILE" ]; then
+    printf 'token: %s (mode %s)\n' "$TOKEN_FILE" "$(ls -ld "$TOKEN_FILE" 2>/dev/null | awk '{print $1}')"
+  else
+    printf 'token: not present (start the package first)\n'
+  fi
+  return $rc
 }
 
 case "${1:-}" in
@@ -378,8 +635,11 @@ case "${1:-}" in
   status)
     do_status
     ;;
+  doctor)
+    do_doctor
+    ;;
   *)
-    err "usage: $0 {start|stop|status|prestart|prestop}"
+    err "usage: $0 {start|stop|status|doctor|prestart|prestop}"
     exit 1
     ;;
 esac

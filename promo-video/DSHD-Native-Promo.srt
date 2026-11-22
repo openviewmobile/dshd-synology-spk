@@ -1,0 +1,48 @@
+1
+00:00:00,400 --> 00:00:03,600
+Your NAS can run a real AI agent.
+
+2
+00:00:03,600 --> 00:00:07,000
+DeepSeek Harness, natively on Synology DSM.
+
+3
+00:00:07,600 --> 00:00:11,200
+No Docker. No Container Manager.
+One package, one native process.
+
+4
+00:00:11,200 --> 00:00:15,000
+No Docker-in-Docker. No worker timeouts.
+
+5
+00:00:15,600 --> 00:00:20,000
+Install it from Package Center.
+
+6
+00:00:20,000 --> 00:00:24,800
+The wizard sets your home, workspace, port, and public URL.
+
+7
+00:00:25,600 --> 00:00:29,800
+The full dsh web UI, served from loopback.
+
+8
+00:00:29,800 --> 00:00:34,200
+Token auth. Your files. Your NAS.
+
+9
+00:00:34,600 --> 00:00:38,400
+Three steps: install, start, open the workspace.
+
+10
+00:00:38,400 --> 00:00:42,200
+No Docker. No router port forwarding.
+
+11
+00:00:42,600 --> 00:00:46,500
+DSHD Native 0.4.0. Open source on GitHub.
+
+12
+00:00:46,500 --> 00:00:49,800
+Your NAS, your agent.

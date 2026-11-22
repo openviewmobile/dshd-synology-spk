@@ -10,7 +10,7 @@
 name: dshd-spk
 services:
   dshd:
-    image: ${DSHD_IMAGE:-dshd-synology:0.2.0}
+    image: ${DSHD_IMAGE:-dshd-synology:0.3.0}
     container_name: dshd-spk
     init: true
     restart: unless-stopped
@@ -24,3 +24,27 @@ services:
       DSH_BIND_HOST: ""
       DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://127.0.0.1:3080}
       DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-127.0.0.1}
+    # dsh answers 401 without a cookie; that is a healthy unauthenticated
+    # response. Probe the container's bridge IP because it does not bind
+    # loopback, and fail only on connection errors or 5xx.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "const h=require('child_process').execSync('hostname -i').toString().trim().split(/\s+/)[0];fetch('http://'+h+':3080/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DSHD_LOG_MAX_SIZE:-10m}"
+        max-file: "${DSHD_LOG_MAX_FILE:-3}"
+    mem_limit: ${DSHD_MEM_LIMIT:-4g}
+    cpus: ${DSHD_CPUS:-2.0}
+    pids_limit: ${DSHD_PIDS_LIMIT:-512}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

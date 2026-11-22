@@ -1,0 +1,29 @@
+services:
+  dshd:
+    image: dshd-synology:0.3.0
+    user: dsh
+    init: true
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    ports:
+      - "127.0.0.1:${DSHD_PORT:-3080}:3080"
+    volumes:
+      - ./data/home:/home/dsh
+      - ./data/workspace:/workspace
+      - ./data/run:/run/dshd
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    environment:
+      HOME: /home/dsh
+      DSH_PUBLIC_URL: ${DSH_PUBLIC_URL:-http://127.0.0.1:3080}
+      DSH_TRUSTED_HOST: ${DSH_TRUSTED_HOST:-127.0.0.1}
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE

@@ -1,5 +1,25 @@
 {
   "port-config": {
     "protocol-file": "port_conf/dshd.sc"
+  },
+  "docker-project": {
+    "projects": [
+      {
+        "name": "dshd",
+        "path": "compose",
+        "build_params": {
+          "force_pull": false,
+          "force_recreate": true,
+          "build": false
+        }
+      }
+    ]
+  },
+  "usr-local-linker": {
+    "bin": [
+      "bin/dshd",
+      "bin/dshd-pkg",
+      "bin/dshd-token"
+    ]
   }
 }

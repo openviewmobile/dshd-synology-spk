@@ -14,7 +14,7 @@ mkdir -p "$TMP/spk" "$TMP/target" "$TMP/var" "$TMP/data" "$TMP/work" "$TMP/state
 tar -xf "$SPK" -C "$TMP/spk"
 tar -xzf "$TMP/spk/package.tgz" -C "$TMP/target"
 
-[ -f "$TMP/target/package/docker-compose.yml" ] || {
+[ -f "$TMP/target/compose/compose.yml" ] || {
   echo "lifecycle: package.tgz extraction failed" >&2
   exit 1
 }
@@ -26,8 +26,14 @@ set -u
 state="${FAKE_DOCKER_STATE:?}"
 mode="${FAKE_DOCKER_MODE:-ok}"
 case "$*" in
+  "info")
+    exit 0
+    ;;
   "compose version"*)
     echo "Docker Compose version v2.29.0"
+    ;;
+  *"compose"*" config -q"*)
+    exit 0
     ;;
   *"compose"*" up -d"*)
     mkdir -p "$state"
@@ -51,6 +57,20 @@ case "$*" in
   "inspect -f {{.State.Running}} fake-container-id"*)
     if [ -f "$state/up" ]; then echo "true"; else echo "false"; fi
     ;;
+  "inspect -f {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} fake-container-id"*)
+    if [ -f "$state/up" ]; then echo "healthy"; else echo "none"; fi
+    ;;
+  "image inspect -f {{.Architecture}} "*)
+    if [ -n "${FAKE_DOCKER_ARCH:-}" ]; then
+      echo "$FAKE_DOCKER_ARCH"
+    else
+      case "$(uname -m)" in
+        x86_64|amd64) echo amd64 ;;
+        aarch64|arm64) echo arm64 ;;
+        *) echo arm64 ;;
+      esac
+    fi
+    ;;
   "image inspect "*)
     ;;
   *)
@@ -71,6 +91,15 @@ DSH_TRUSTED_HOST=127.0.0.1
 DSHD_PUID=$(id -u)
 DSHD_PGID=$(id -g)
 DSHD_START_TIMEOUT=4
+DSHD_PORT=23080
+DSHD_ALLOW_PULL=no
+DSHD_MIN_FREE_MB=1
+DSHD_ALLOW_EMULATION=no
+DSHD_MEM_LIMIT=1g
+DSHD_CPUS=1.0
+DSHD_PIDS_LIMIT=128
+DSHD_LOG_MAX_SIZE=1m
+DSHD_LOG_MAX_FILE=1
 EOF
 
 export SYNOPKG_PKGDEST="$TMP/target"
@@ -162,8 +191,9 @@ INST_DATA="$INST_VAR/data"
 INST_WORK="$INST_VAR/work"
 mkdir -p "$INST_ROOT" "$INST_VAR"
 cp -R "$TMP/target" "$INST_ROOT/target"
+cp "$TMP/spk/INFO" "$INST_ROOT/INFO"
 cp -R "$TMP/spk/scripts" "$INST_ROOT/scripts"
-python3 - "$INST_ROOT/target/package/config.env.example" \
+python3 - "$INST_ROOT/target/config.env.example" \
   "$INST_DATA" "$INST_WORK" <<'PY'
 import sys
 path, data, work = sys.argv[1:4]
@@ -175,6 +205,7 @@ PY
 
 SYNOPKG_PKGDEST="$INST_ROOT/target" SYNOPKG_PKGVAR="$INST_VAR" \
   DSHD_TOKEN_LINK="$TMP/install-dshd-token" \
+  DSHD_CLI_LINK="$TMP/install-dshd" \
   "$INST_ROOT/scripts/installer" init >"$TMP/installer-init.log" 2>&1 || {
   cat "$TMP/installer-init.log" >&2
   echo "lifecycle: installer init failed" >&2
@@ -192,6 +223,7 @@ printf 'token\n' > "$INST_VAR/token-url.txt"
 printf 'state=running\n' > "$INST_VAR/status"
 SYNOPKG_PKGDEST="$INST_ROOT/target" SYNOPKG_PKGVAR="$INST_VAR" \
   DSHD_TOKEN_LINK="$TMP/install-dshd-token" \
+  DSHD_CLI_LINK="$TMP/install-dshd" \
   "$INST_ROOT/scripts/installer" cleanup >"$TMP/installer-cleanup.log" 2>&1 || {
   cat "$TMP/installer-cleanup.log" >&2
   echo "lifecycle: installer cleanup failed" >&2
@@ -241,5 +273,141 @@ set -e
   exit 1
 }
 mv "$TMP/var/config.env.bak" "$TMP/var/config.env"
+
+# ---------------------------------------------------------------------------
+# Install wizard: values exported by DSM become config.env on first install.
+# ---------------------------------------------------------------------------
+WIZ_ROOT="$TMP/wizroot"
+WIZ_VAR="$TMP/wiz-var"
+mkdir -p "$WIZ_ROOT" "$WIZ_VAR"
+cp -R "$TMP/target" "$WIZ_ROOT/target"
+cp "$TMP/spk/INFO" "$WIZ_ROOT/INFO"
+cp -R "$TMP/spk/scripts" "$WIZ_ROOT/scripts"
+SYNOPKG_PKGDEST="$WIZ_ROOT/target" SYNOPKG_PKGVAR="$WIZ_VAR" \
+  DSHD_TOKEN_LINK="$TMP/wiz-token" DSHD_CLI_LINK="$TMP/wiz-dshd" \
+  DSHD_DATA_DIR="$WIZ_VAR/data" DSHD_WORKSPACE_DIR="$WIZ_VAR/work" \
+  DSHD_PORT=4567 DSHD_IMAGE=dshd-synology:0.3.0 \
+  DSH_PUBLIC_URL=https://dsh.example.net DSH_TRUSTED_HOST=dsh.example.net \
+  "$WIZ_ROOT/scripts/installer" init >"$TMP/wiz.log" 2>&1 || {
+  cat "$TMP/wiz.log" >&2
+  echo "lifecycle: wizard init failed" >&2
+  exit 1
+}
+grep -qx 'DSHD_PORT=4567' "$WIZ_VAR/config.env" || {
+  echo "lifecycle: wizard DSHD_PORT was not applied" >&2; exit 1; }
+grep -qx 'DSH_PUBLIC_URL=https://dsh.example.net' "$WIZ_VAR/config.env" || {
+  echo "lifecycle: wizard DSH_PUBLIC_URL was not applied" >&2; exit 1; }
+grep -qx "DSHD_DATA_DIR=$WIZ_VAR/data" "$WIZ_VAR/config.env" || {
+  echo "lifecycle: wizard DSHD_DATA_DIR was not applied" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Upgrade migration: keep user values, add new keys, move the packaged default
+# image tag forward, and leave a restorable backup.
+# ---------------------------------------------------------------------------
+MIG_ROOT="$TMP/migroot"
+MIG_VAR="$TMP/mig-var"
+mkdir -p "$MIG_ROOT" "$MIG_VAR"
+cp -R "$TMP/target" "$MIG_ROOT/target"
+cp "$TMP/spk/INFO" "$MIG_ROOT/INFO"
+cp -R "$TMP/spk/scripts" "$MIG_ROOT/scripts"
+cat > "$MIG_VAR/config.env" <<EOF
+DSHD_IMAGE=dshd-synology:0.2.0
+DSHD_PORT=4568
+DSHD_DATA_DIR=$MIG_VAR/data
+DSHD_WORKSPACE_DIR=$MIG_VAR/work
+DSH_PUBLIC_URL=https://old.example.net
+DSH_TRUSTED_HOST=old.example.net
+DSHD_PUID=$(id -u)
+DSHD_PGID=$(id -g)
+EOF
+SYNOPKG_PKGDEST="$MIG_ROOT/target" SYNOPKG_PKGVAR="$MIG_VAR" \
+  DSHD_TOKEN_LINK="$TMP/mig-token" DSHD_CLI_LINK="$TMP/mig-dshd" \
+  "$MIG_ROOT/scripts/installer" init >"$TMP/mig.log" 2>&1 || {
+  cat "$TMP/mig.log" >&2
+  echo "lifecycle: upgrade migration failed" >&2
+  exit 1
+}
+grep -qx 'DSHD_IMAGE=dshd-synology:0.3.0' "$MIG_VAR/config.env" || {
+  echo "lifecycle: old default image was not migrated" >&2; exit 1; }
+grep -qx 'DSHD_PORT=4568' "$MIG_VAR/config.env" || {
+  echo "lifecycle: migration overwrote a user port" >&2; exit 1; }
+grep -qx 'DSH_PUBLIC_URL=https://old.example.net' "$MIG_VAR/config.env" || {
+  echo "lifecycle: migration overwrote a user URL" >&2; exit 1; }
+grep -qx 'DSHD_ALLOW_PULL=no' "$MIG_VAR/config.env" || {
+  echo "lifecycle: migration did not add new keys" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# CLI and doctor
+# ---------------------------------------------------------------------------
+SYNOPKG_PKGDEST="$INST_ROOT/target" SYNOPKG_PKGVAR="$INST_VAR"   "$INST_ROOT/scripts/dshd" version > "$TMP/version.out" || {
+  echo "lifecycle: dshd version failed" >&2; exit 1; }
+grep -qx '0.3.0' "$TMP/version.out" || {
+  echo "lifecycle: dshd version output mismatch" >&2; exit 1; }
+SYNOPKG_PKGDEST="$INST_ROOT/target" SYNOPKG_PKGVAR="$INST_VAR"   "$INST_ROOT/scripts/dshd" config | grep -qx 'DSHD_PORT=3080' || {
+  echo "lifecycle: dshd config failed" >&2; exit 1; }
+SYNOPKG_PKGDEST="$TMP/target" SYNOPKG_PKGVAR="$TMP/var" \
+  "$TMP/install-dshd" token >/dev/null 2>&1 && {
+  echo "lifecycle: dshd token should fail without a token file" >&2; exit 1; } || true
+"$CTL" doctor >"$TMP/doctor.log" 2>&1 || {
+  cat "$TMP/doctor.log" >&2
+  echo "lifecycle: doctor failed" >&2
+  exit 1
+}
+grep -q '^dshd 0.3.0' "$TMP/doctor.log" || {
+  echo "lifecycle: doctor output is missing the version" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Preflight failures: wrong architecture, low disk, busy port.
+# ---------------------------------------------------------------------------
+cp "$TMP/var/config.env" "$TMP/var/config.env.preflight"
+# Ensure the container is stopped and the token is gone.
+FAKE_DOCKER_MODE=ok "$CTL" stop >/dev/null 2>&1 || true
+rm -f "$TMP/var/token-url.txt"
+
+export FAKE_DOCKER_ARCH="ppc64le"
+set +e
+"$CTL" start >"$TMP/arch.log" 2>&1
+code=$?
+set -e
+[ "$code" -ne 0 ] || {
+  echo "lifecycle: start must reject an architecture mismatch" >&2; exit 1; }
+grep -q '^state=failed' "$TMP/var/status" || {
+  echo "lifecycle: arch failure did not write failed status" >&2; exit 1; }
+awk '/^DSHD_ALLOW_EMULATION=/{print "DSHD_ALLOW_EMULATION=yes"; next} {print}' \
+  "$TMP/var/config.env.preflight" > "$TMP/var/config.env"
+export FAKE_DOCKER_MODE="ok"
+"$CTL" start >"$TMP/arch-allow.log" 2>&1 || {
+  cat "$TMP/arch-allow.log" >&2
+  echo "lifecycle: emulation override should allow start" >&2
+  exit 1
+}
+unset FAKE_DOCKER_ARCH
+"$CTL" stop >/dev/null 2>&1 || true
+
+awk '/^DSHD_MIN_FREE_MB=/{print "DSHD_MIN_FREE_MB=99999999"; next} {print}' \
+  "$TMP/var/config.env.preflight" > "$TMP/var/config.env"
+set +e
+"$CTL" start >"$TMP/disk.log" 2>&1
+code=$?
+set -e
+[ "$code" -ne 0 ] || {
+  echo "lifecycle: start must reject insufficient disk space" >&2; exit 1; }
+
+cat > "$TMP/bin/ss" <<'EOF'
+#!/bin/sh
+echo "State Recv-Q Send-Q Local Address:Port Peer Address:Port"
+echo "LISTEN 0 128 0.0.0.0:23080 0.0.0.0:*"
+EOF
+chmod 0755 "$TMP/bin/ss"
+PATH="$TMP/bin:$PATH"
+export PATH
+set +e
+"$CTL" start >"$TMP/port.log" 2>&1
+code=$?
+set -e
+[ "$code" -ne 0 ] || {
+  echo "lifecycle: start must reject a busy port" >&2; exit 1; }
+rm -f "$TMP/bin/ss"
+mv "$TMP/var/config.env.preflight" "$TMP/var/config.env"
 
 echo "lifecycle smoke OK"

@@ -1,0 +1,8 @@
+#!/bin/sh
+# DSM 7 post-upgrade hook. Runs as root via conf/privilege ctrl-script.
+#
+# Re-run the idempotent init so config keys added by the new package version are
+# present before DSM starts the package. Existing user values are preserved.
+set -u
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+exec "$SCRIPT_DIR/installer" init

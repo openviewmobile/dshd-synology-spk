@@ -1,0 +1,43 @@
+name: build SPK
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: Target architecture
+        required: true
+        default: x86_64
+        type: choice
+        options:
+          - x86_64
+          - armv8
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-qemu-action@v3
+        if: inputs.arch == 'armv8'
+      - name: Build x86_64 runtime and package
+        if: inputs.arch == 'x86_64'
+        run: |
+          make native-runtime
+          make native-spk
+      - name: Build armv8 runtime and package
+        if: inputs.arch == 'armv8'
+        run: |
+          make native-armv8-runtime
+          make native-armv8-spk
+      - name: Upload SPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dshd-${{ inputs.arch }}
+          path: dist/*.spk
+          if-no-files-found: error

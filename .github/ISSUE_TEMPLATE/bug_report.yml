@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible problem with the DSHD package or build
+title: "[bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Do not paste token URLs, API keys, DSM credentials,
+        private hostnames, or unredacted logs. For security issues use SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: DSHD version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - Native 0.4.x (recommended)
+        - Docker 0.3.x (legacy)
+        - Build/tooling only
+    validations:
+      required: true
+  - type: input
+    id: dsm
+    attributes:
+      label: DSM version and architecture
+      placeholder: "DSM 7.2.2-72806, x86_64, VirtualDSM"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, UI path, and whether this is a VM or real NAS.
+      placeholder: |
+        1. Install ...
+        2. Start ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: Redact tokens, keys, usernames, public IPs, and serial numbers.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, reverse-proxy setup, or a link to a redacted log.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed secrets and personal data from this report.
+          required: true
+        - label: I searched existing issues before opening this one.
+          required: true

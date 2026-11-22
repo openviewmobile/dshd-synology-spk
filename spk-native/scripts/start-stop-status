@@ -1,0 +1,222 @@
+#!/bin/sh
+# DSHD Native lifecycle: run dsh web directly as the package user.
+#
+# Exit codes: 0 running, 3 stopped, 1 configuration/runtime error.
+set -u
+umask 077
+
+PKG_NAME="dshd"
+PKG_DEST="${SYNOPKG_PKGDEST:-/var/packages/$PKG_NAME/target}"
+PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
+CONFIG_FILE="$PKG_VAR/config.env"
+TOKEN_FILE="$PKG_VAR/token-url.txt"
+STATUS_FILE="$PKG_VAR/status"
+PID_FILE="$PKG_VAR/dshd.pid"
+LOG_DIR="$PKG_VAR/log"
+LOG_FILE="$LOG_DIR/dsh.log"
+PROFILE_PATCH="$PKG_VAR/dshd-workspace.patch.yml"
+RUNTIME="$PKG_DEST/runtime"
+NODE="$RUNTIME/node"
+DSH_BIN="$RUNTIME/node_modules/@deepseek-ai/dsh/lib/bin.js"
+TMP_ROOT="/dev/shm/$PKG_NAME"
+
+DSHD_DATA_DIR=""
+DSHD_WORKSPACE_DIR=""
+DSHD_PORT=""
+DSH_PUBLIC_URL=""
+DSH_TRUSTED_HOST=""
+DSHD_START_TIMEOUT="300"
+
+log() { printf 'dshd: %s\n' "$*"; }
+err() { printf 'dshd: %s\n' "$*" >&2; }
+
+config_value() {
+  sed -n "s/^$1=//p" "$CONFIG_FILE" 2>/dev/null | tail -n 1 |
+    sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+load_config() {
+  [ -f "$CONFIG_FILE" ] || return 1
+  DSHD_DATA_DIR=$(config_value DSHD_DATA_DIR)
+  DSHD_WORKSPACE_DIR=$(config_value DSHD_WORKSPACE_DIR)
+  DSHD_PORT=$(config_value DSHD_PORT)
+  DSH_PUBLIC_URL=$(config_value DSH_PUBLIC_URL)
+  DSH_TRUSTED_HOST=$(config_value DSH_TRUSTED_HOST)
+  DSHD_START_TIMEOUT=$(config_value DSHD_START_TIMEOUT)
+  : "${DSHD_DATA_DIR:=$PKG_VAR/native/home}"
+  : "${DSHD_WORKSPACE_DIR:=$PKG_VAR/native/workspace}"
+  : "${DSHD_PORT:=3080}"
+  : "${DSH_PUBLIC_URL:=http://127.0.0.1:$DSHD_PORT}"
+  : "${DSH_TRUSTED_HOST:=127.0.0.1}"
+  : "${DSHD_START_TIMEOUT:=300}"
+  case "$DSHD_START_TIMEOUT" in ''|*[!0-9]*) DSHD_START_TIMEOUT=300 ;; esac
+  return 0
+}
+
+write_status() {
+  printf 'state=%s\nmessage=%s\nupdated=%s\n' "$1" "$2" "$(date '+%Y-%m-%d %H:%M:%S')" > "$STATUS_FILE" 2>/dev/null || true
+}
+
+pid_alive() {
+  [ -f "$PID_FILE" ] || return 1
+  pid=$(cat "$PID_FILE" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null
+}
+
+probe_http() {
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:$DSHD_PORT/" 2>/dev/null || true)
+  printf '%s\n' "${code:-000}"
+}
+
+write_token() {
+  url="$1"
+  [ -n "$url" ] || return 1
+  tmp="$TOKEN_FILE.tmp.$$"
+  ( umask 077; printf '%s\n' "$url" > "$tmp" ) || return 1
+  chmod 0600 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$TOKEN_FILE"
+}
+
+preflight() {
+  [ -x "$NODE" ] || { err "missing native runtime: $NODE"; return 1; }
+  [ -f "$DSH_BIN" ] || { err "missing dsh entrypoint: $DSH_BIN"; return 1; }
+  [ -f "$CONFIG_FILE" ] || { err "missing $CONFIG_FILE; reinstall the package"; return 1; }
+  case "$DSHD_PORT" in ''|*[!0-9]*) err "invalid DSHD_PORT: $DSHD_PORT"; return 1 ;; esac
+  [ "$DSHD_PORT" -ge 1025 ] && [ "$DSHD_PORT" -le 65535 ] ||
+    { err "DSHD_PORT must be 1025..65535"; return 1; }
+  mkdir -p "$DSHD_DATA_DIR" "$DSHD_WORKSPACE_DIR" "$LOG_DIR" 2>/dev/null || true
+  [ -w "$DSHD_DATA_DIR" ] || { err "data directory is not writable: $DSHD_DATA_DIR"; return 1; }
+  [ -w "$DSHD_WORKSPACE_DIR" ] || { err "workspace directory is not writable: $DSHD_WORKSPACE_DIR"; return 1; }
+  # dsh resolves its first-use workspace under <Documents>/deepseek-harness.
+  # DSM has no xdg-user-dir, so point Documents at the package home and make the
+  # fixed child name a symlink to the configured workspace.
+  mkdir -p "$DSHD_DATA_DIR/deepseek-harness" 2>/dev/null || true
+  if [ -L "$DSHD_DATA_DIR/deepseek-harness/default-workspace" ] || [ ! -e "$DSHD_DATA_DIR/deepseek-harness/default-workspace" ]; then
+    ln -sfn "$DSHD_WORKSPACE_DIR" "$DSHD_DATA_DIR/deepseek-harness/default-workspace" 2>/dev/null || true
+  fi
+  cat > "$PROFILE_PATCH" <<EOF
+- id: workspace-controller
+  config:
+    documentsDirectory: $DSHD_DATA_DIR
+EOF
+  chmod 0644 "$PROFILE_PATCH" 2>/dev/null || true
+  mkdir -p "$TMP_ROOT" 2>/dev/null || true
+  if [ -d "$TMP_ROOT" ] && [ -w "$TMP_ROOT" ]; then
+    chmod 0700 "$TMP_ROOT" 2>/dev/null || true
+  else
+    # Native addons cannot be mapped executable from /volume1 or /tmp on DSM.
+    TMP_ROOT="$PKG_VAR/tmp"
+    mkdir -p "$TMP_ROOT" 2>/dev/null || true
+    err "warning: $TMP_ROOT is not executable; native addon loading may fail"
+  fi
+  return 0
+}
+
+do_start() {
+  load_config || { err "missing config; reinstall"; return 1; }
+  if pid_alive; then
+    write_status running "already running"
+    log "already running (pid $(cat "$PID_FILE"))"
+    return 0
+  fi
+  preflight || { write_status failed "preflight failed"; return 1; }
+  rm -f "$TOKEN_FILE" "$PID_FILE" "$STATUS_FILE"
+  [ -f "$LOG_FILE" ] && mv -f "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null || true
+  : > "$LOG_FILE"
+  chmod 0600 "$LOG_FILE" 2>/dev/null || true
+  chmod 0600 "$LOG_FILE.1" 2>/dev/null || true
+  cd "$DSHD_WORKSPACE_DIR" || { err "cannot enter workspace: $DSHD_WORKSPACE_DIR"; return 1; }
+  log "starting dsh web on 127.0.0.1:$DSHD_PORT (native, cwd $DSHD_WORKSPACE_DIR)"
+  HOME="$DSHD_DATA_DIR" TMPDIR="$TMP_ROOT" \
+    "$NODE" "$DSH_BIN" web --patch "$PROFILE_PATCH" --host 127.0.0.1 --port "$DSHD_PORT" --no-open \
+      --public-url "$DSH_PUBLIC_URL" --trusted-host "$DSH_TRUSTED_HOST" \
+    >> "$LOG_FILE" 2>&1 &
+  pid=$!
+  printf '%s\n' "$pid" > "$PID_FILE"
+  elapsed=0
+  while [ "$elapsed" -lt "$DSHD_START_TIMEOUT" ]; do
+    if [ -s "$LOG_FILE" ]; then
+      url=$(grep -o 'http[^ ]*?token=[^ ]*' "$LOG_FILE" 2>/dev/null | tail -n 1)
+      if [ -n "$url" ]; then
+        write_token "$url" || true
+        write_status running "token ready (native)"
+        log "ready; token URL written to $TOKEN_FILE"
+        return 0
+      fi
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      err "dsh exited before producing a token; see $LOG_FILE"
+      tail -n 40 "$LOG_FILE" >&2 || true
+      rm -f "$PID_FILE"
+      write_status failed "dsh exited during startup"
+      return 1
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  err "dsh did not produce a token within ${DSHD_START_TIMEOUT}s; see $LOG_FILE"
+  kill "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE"
+  write_status failed "startup timeout"
+  return 1
+}
+
+do_stop() {
+  load_config || true
+  if pid_alive; then
+    pid=$(cat "$PID_FILE")
+    log "stopping dsh (pid $pid)"
+    kill "$pid" 2>/dev/null || true
+    n=0
+    while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 20 ]; do sleep 1; n=$((n + 1)); done
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE" "$TOKEN_FILE"
+  write_status stopped "stopped"
+  log "stopped; data kept in $DSHD_DATA_DIR"
+  return 0
+}
+
+do_status() {
+  load_config || return 3
+  if pid_alive; then
+    code=$(probe_http)
+    case "$code" in
+      200|303|401) write_status running "status check"; return 0 ;;
+      000) write_status failed "process alive but HTTP is not reachable"; return 1 ;;
+      *) write_status failed "unexpected HTTP $code"; return 1 ;;
+    esac
+  fi
+  return 3
+}
+
+do_doctor() {
+  load_config || return 1
+  rc=0
+  printf 'dshd native %s\n' "$(sed -n 's/^version="\(.*\)"$/\1/p' /var/packages/$PKG_NAME/INFO 2>/dev/null | head -n 1)"
+  printf 'config: %s\nruntime: %s\n' "$CONFIG_FILE" "$NODE"
+  [ -x "$NODE" ] && printf 'node: %s\n' "$("$NODE" -v 2>/dev/null)" || { printf 'node: MISSING\n'; rc=1; }
+  [ -f "$DSH_BIN" ] && printf 'dsh: %s\n' "$(grep -m1 '"version"' "$RUNTIME/node_modules/@deepseek-ai/dsh/package.json" 2>/dev/null | sed 's/.*: *"//;s/".*//')" || { printf 'dsh: MISSING\n'; rc=1; }
+  printf 'data: %s\nworkspace: %s\nport: %s\npublic URL: %s\ntrusted host: %s\n' \
+    "$DSHD_DATA_DIR" "$DSHD_WORKSPACE_DIR" "$DSHD_PORT" "$DSH_PUBLIC_URL" "$DSH_TRUSTED_HOST"
+  [ -w "$DSHD_DATA_DIR" ] && printf 'data writable: yes\n' || { printf 'data writable: no\n'; rc=1; }
+  [ -w "$DSHD_WORKSPACE_DIR" ] && printf 'workspace writable: yes\n' || { printf 'workspace writable: no\n'; rc=1; }
+  if pid_alive; then
+    printf 'runtime: native process pid %s\n' "$(cat "$PID_FILE")"
+    printf 'http: %s\n' "$(probe_http)"
+  else
+    printf 'process: stopped\n'
+  fi
+  if [ -f "$TOKEN_FILE" ]; then printf 'token: %s (mode %s)\n' "$TOKEN_FILE" "$(ls -ld "$TOKEN_FILE" 2>/dev/null | awk '{print $1}')"; else printf 'token: not present\n'; fi
+  return "$rc"
+}
+
+case "${1:-}" in
+  start) do_start ;;
+  stop) do_stop ;;
+  status) do_status ;;
+  doctor) do_doctor ;;
+  prestart|prestop) exit 0 ;;
+  *) err "usage: $0 {start|stop|status|doctor|prestart|prestop}"; exit 1 ;;
+esac

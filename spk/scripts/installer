@@ -1,12 +1,12 @@
 #!/bin/sh
-# DSHD package installer helper, called by postinst / preuninst.
+# DSHD package installer helper, called by postinst / preupgrade / postupgrade /
+# preuninst and by the local DSM simulation harness.
 #
-# STATUS: not yet exercised by DSM's package manager.
-#
-# init    create the mutable package dir, seed config.env, create data dirs,
-#         and install the optional /usr/local/bin/dshd-token convenience link.
-# cleanup remove only volatile runtime files and the convenience link. The dsh
-#         home, workspace and config.env are never deleted by this script.
+# init       create the mutable package dir, seed/migrate config.env (including
+#            install-wizard values), create data dirs and convenience links.
+# preupgrade back up config.env before DSM replaces the old package.
+# cleanup    remove only volatile runtime files and convenience links. The dsh
+#            home, workspace and config.env are never deleted by this script.
 set -u
 
 PKG_NAME="dshd"
@@ -14,16 +14,168 @@ PKG_DEST="${SYNOPKG_PKGDEST:-/var/packages/$PKG_NAME/target}"
 PKG_VAR="${SYNOPKG_PKGVAR:-/var/packages/$PKG_NAME/var}"
 PKG_ROOT=$(dirname "$PKG_DEST")
 CONFIG_FILE="$PKG_VAR/config.env"
-CONFIG_EXAMPLE="$PKG_DEST/package/config.env.example"
-TOKEN_LINK="${DSHD_TOKEN_LINK:-/usr/local/bin/dshd-token}"
+CONFIG_EXAMPLE="$PKG_DEST/config.env.example"
+BIN_DIR="${DSHD_BIN_DIR:-/usr/local/bin}"
+TOKEN_LINK="${DSHD_TOKEN_LINK:-$BIN_DIR/dshd-token}"
+CLI_LINK="${DSHD_CLI_LINK:-$BIN_DIR/dshd}"
+SHARE_LINK="$PKG_ROOT/shares/$PKG_NAME-workspace"
+PREVIOUS_IMAGE="dshd-synology:0.2.0"
+CURRENT_IMAGE="dshd-synology:0.3.0"
 
 log() { printf 'dshd: %s\n' "$*"; }
+warn() { printf 'dshd: warning: %s\n' "$*" >&2; }
 err() { printf 'dshd: %s\n' "$*" >&2; }
 
 config_value() {
   # Read one KEY=value line; never execute config.env as shell code.
   sed -n "s/^$1=//p" "$CONFIG_FILE" 2>/dev/null | tail -n 1 |
     sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+config_set() {
+  key="$1"
+  value="$2"
+  [ -f "$CONFIG_FILE" ] || return 1
+  tmp="$CONFIG_FILE.tmp.$$"
+  awk -v k="$key" -v v="$value" '
+    BEGIN { found = 0 }
+    index($0, k "=") == 1 { print k "=" v; found = 1; next }
+    { print }
+    END { if (!found) print k "=" v }
+  ' "$CONFIG_FILE" > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$CONFIG_FILE"
+}
+
+valid_abs_dir() {
+  case "$1" in
+    /?*) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    /volume*|"$PKG_VAR"/*|"$PKG_ROOT"/shares/*) ;;
+    *) return 1 ;;
+  esac
+  case "/$1/" in
+    *"/../"*) return 1 ;;
+  esac
+  return 0
+}
+
+valid_port() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 1025 ] && [ "$1" -le 65535 ]
+}
+
+valid_yes_no() {
+  case "$1" in yes|no) return 0 ;; *) return 1 ;; esac
+}
+
+valid_url() {
+  case "$1" in
+    http://?*|https://?*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+valid_host() {
+  case "$1" in
+    ''|*[!A-Za-z0-9._:-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+valid_image() {
+  case "$1" in
+    ''|*[!A-Za-z0-9._/:@-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+valid_int() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  return 0
+}
+
+# Apply values collected by WIZARD_UIFILES/install_uifile. The names are
+# exported by DSM into this script's environment. Invalid values never reach a
+# root-owned mkdir/chown; they fall back to the packaged default and warn.
+apply_wizard() {
+  [ -f "$CONFIG_FILE" ] || return 0
+
+  if [ -n "${DSHD_DATA_DIR:-}" ]; then
+    if valid_abs_dir "$DSHD_DATA_DIR"; then config_set DSHD_DATA_DIR "$DSHD_DATA_DIR"
+    else warn "ignoring wizard DSHD_DATA_DIR=$DSHD_DATA_DIR (must be under /volume or the package var)"; fi
+  fi
+  if [ -n "${DSHD_WORKSPACE_DIR:-}" ]; then
+    if valid_abs_dir "$DSHD_WORKSPACE_DIR"; then config_set DSHD_WORKSPACE_DIR "$DSHD_WORKSPACE_DIR"
+    else warn "ignoring wizard DSHD_WORKSPACE_DIR=$DSHD_WORKSPACE_DIR (must be under /volume or the package var)"; fi
+  fi
+  if [ -n "${DSHD_PORT:-}" ]; then
+    if valid_port "$DSHD_PORT"; then config_set DSHD_PORT "$DSHD_PORT"
+    else warn "ignoring wizard DSHD_PORT=$DSHD_PORT (must be 1025..65535)"; fi
+  fi
+  if [ -n "${DSHD_IMAGE:-}" ]; then
+    if valid_image "$DSHD_IMAGE"; then config_set DSHD_IMAGE "$DSHD_IMAGE"
+    else warn "ignoring wizard DSHD_IMAGE=$DSHD_IMAGE (invalid characters)"; fi
+  fi
+  if [ -n "${DSH_PUBLIC_URL:-}" ]; then
+    if valid_url "$DSH_PUBLIC_URL"; then config_set DSH_PUBLIC_URL "$DSH_PUBLIC_URL"
+    else warn "ignoring wizard DSH_PUBLIC_URL=$DSH_PUBLIC_URL (must start with http:// or https://)"; fi
+  fi
+  if [ -n "${DSH_TRUSTED_HOST:-}" ]; then
+    if valid_host "$DSH_TRUSTED_HOST"; then config_set DSH_TRUSTED_HOST "$DSH_TRUSTED_HOST"
+    else warn "ignoring wizard DSH_TRUSTED_HOST=$DSH_TRUSTED_HOST (invalid characters)"; fi
+  fi
+}
+
+# Fill keys added in newer package versions without touching user values.
+migrate_config() {
+  [ -f "$CONFIG_FILE" ] || return 1
+  [ -f "$CONFIG_EXAMPLE" ] || return 1
+  added=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) continue ;;
+      *=*) ;;
+      *) continue ;;
+    esac
+    key=${line%%=*}
+    value=${line#*=}
+    if [ -z "$(config_value "$key")" ] && ! grep -q "^$key=" "$CONFIG_FILE" 2>/dev/null; then
+      printf '%s=%s\n' "$key" "$value" >> "$CONFIG_FILE"
+      added="$added $key"
+    fi
+  done < "$CONFIG_EXAMPLE"
+  [ -n "$added" ] && log "added new config keys:$added"
+
+  # Only rewrite the exact old packaged default; user-supplied tags are kept.
+  if [ "$(config_value DSHD_IMAGE)" = "$PREVIOUS_IMAGE" ]; then
+    config_set DSHD_IMAGE "$CURRENT_IMAGE"
+    log "migrated DSHD_IMAGE $PREVIOUS_IMAGE -> $CURRENT_IMAGE"
+  fi
+  return 0
+}
+
+write_compose_env() {
+  compose_dir="$PKG_DEST/compose"
+  [ -d "$compose_dir" ] || return 0
+  [ -f "$CONFIG_FILE" ] || return 0
+  tmp="$compose_dir/.env.tmp.$$"
+  {
+    for key in DSHD_IMAGE DSHD_PORT DSHD_DATA_DIR DSHD_WORKSPACE_DIR \
+               DSH_PUBLIC_URL DSH_TRUSTED_HOST DSHD_MEM_LIMIT DSHD_CPUS \
+               DSHD_PIDS_LIMIT DSHD_LOG_MAX_SIZE DSHD_LOG_MAX_FILE; do
+      value=$(config_value "$key")
+      [ -n "$value" ] && printf '%s=%s\n' "$key" "$value"
+    done
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$compose_dir/.env" || return 1
+  chmod 0644 "$compose_dir/.env" 2>/dev/null || true
+  # The Container Manager worker may run compose from the package target root
+  # rather than the compose directory; keep a copy there as well.
+  cp "$compose_dir/.env" "$PKG_DEST/.env" 2>/dev/null || true
+  chmod 0644 "$PKG_DEST/.env" 2>/dev/null || true
+  return 0
 }
 
 load_dirs() {
@@ -35,38 +187,40 @@ load_dirs() {
   : "${DSHD_WORKSPACE_DIR:=/volume1/dshd-workspace}"
   : "${DSHD_PUID:=1001}"
   : "${DSHD_PGID:=1001}"
-  for pair in "DSHD_DATA_DIR:$DSHD_DATA_DIR" "DSHD_WORKSPACE_DIR:$DSHD_WORKSPACE_DIR"; do
-    key=${pair%%:*}; value=${pair#*:}
-    case "$value" in
-      /?*) ;;
-      *) err "$key must be absolute: $value"; return 1 ;;
-    esac
-    case "$value" in
-      /volume*|"$PKG_VAR"/*) ;;
-      *) err "$key must be under /volume or $PKG_VAR: $value"; return 1 ;;
-    esac
-    case "/$value/" in
-      *"/../"*) err "$key must not contain '..': $value"; return 1 ;;
-    esac
-  done
+
+  valid_abs_dir "$DSHD_DATA_DIR" || { err "DSHD_DATA_DIR must be under /volume or $PKG_VAR: $DSHD_DATA_DIR"; return 1; }
+  valid_abs_dir "$DSHD_WORKSPACE_DIR" || { err "DSHD_WORKSPACE_DIR must be under /volume or $PKG_VAR: $DSHD_WORKSPACE_DIR"; return 1; }
+  valid_int "$DSHD_PUID" || { err "DSHD_PUID must be numeric: $DSHD_PUID"; return 1; }
+  valid_int "$DSHD_PGID" || { err "DSHD_PGID must be numeric: $DSHD_PGID"; return 1; }
+  return 0
 }
 
-install_token_link() {
-  [ -x "$PKG_ROOT/scripts/token" ] || return 0
-  [ -d "$(dirname "$TOKEN_LINK")" ] || return 0
-  if ln -sfn "$PKG_ROOT/scripts/token" "$TOKEN_LINK" 2>/dev/null; then
-    log "installed $TOKEN_LINK"
+install_one_link() {
+  link="$1"
+  target="$2"
+  [ -x "$target" ] || return 0
+  [ -d "$(dirname "$link")" ] || return 0
+  if ln -sfn "$target" "$link" 2>/dev/null; then
+    log "installed $link"
   else
-    log "could not install $TOKEN_LINK (optional); use $PKG_ROOT/scripts/token"
+    warn "could not install $link; use $target directly"
   fi
 }
 
-remove_token_link() {
-  [ -L "$TOKEN_LINK" ] || return 0
-  target=$(readlink "$TOKEN_LINK" 2>/dev/null || true)
+install_links() {
+  install_one_link "$TOKEN_LINK" "$PKG_ROOT/scripts/token" || return 1
+  install_one_link "$CLI_LINK" "$PKG_ROOT/scripts/dshd" || return 1
+  return 0
+}
+
+remove_link() {
+  link="$1"
+  expected="$2"
+  [ -L "$link" ] || return 0
+  target=$(readlink "$link" 2>/dev/null || true)
   case "$target" in
-    "$PKG_ROOT/scripts/token"|*/"$PKG_NAME"/scripts/token)
-      rm -f "$TOKEN_LINK" && log "removed $TOKEN_LINK"
+    "$expected"|*/"$PKG_NAME"/scripts/*)
+      rm -f "$link" && log "removed $link"
       ;;
   esac
 }
@@ -78,31 +232,52 @@ do_init() {
     cp "$CONFIG_EXAMPLE" "$CONFIG_FILE" || { err "cannot seed $CONFIG_FILE"; return 1; }
     chmod 0644 "$CONFIG_FILE" 2>/dev/null || true
     log "seeded $CONFIG_FILE"
+    apply_wizard
   else
     log "kept existing $CONFIG_FILE"
+    apply_wizard
+    migrate_config || warn "config migration reported an error"
   fi
 
   load_dirs || return 1
-  mkdir -p "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" ||
-    { err "cannot create data directories"; return 1; }
+  mkdir -p "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null ||
+    warn "data directories will be created by the container runtime"
+  mkdir -p "$PKG_VAR/run" "$PKG_VAR/home" "$PKG_VAR/workspace" 2>/dev/null || true
+  chmod 0777 "$PKG_VAR/run" "$PKG_VAR/home" "$PKG_VAR/workspace" 2>/dev/null || true
+  mkdir -p "$PKG_DEST/data/home" "$PKG_DEST/data/workspace" "$PKG_DEST/data/run" 2>/dev/null || true
+  chmod 0777 "$PKG_VAR/home" "$PKG_VAR/workspace" "$PKG_VAR/run" 2>/dev/null || true
+  chmod 0777 "$PKG_DEST/compose/data/home" "$PKG_DEST/compose/data/workspace" "$PKG_DEST/compose/data/run" 2>/dev/null || true
 
   if [ "$(id -u)" = "0" ]; then
     chown "$DSHD_PUID:$DSHD_PGID" "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null || true
     chmod 0775 "$DSHD_DATA_DIR/home" "$DSHD_WORKSPACE_DIR" 2>/dev/null || true
   fi
 
-  install_token_link
+  if [ -e "$SHARE_LINK" ]; then
+    log "workspace share available at $SHARE_LINK"
+  fi
+  install_links || warn "could not install convenience links"
+  write_compose_env || warn "could not write compose/.env"
   log "data: $DSHD_DATA_DIR/home; workspace: $DSHD_WORKSPACE_DIR"
+  return 0
+}
+
+do_preupgrade() {
+  mkdir -p "$PKG_VAR" || return 1
+  if [ -f "$CONFIG_FILE" ]; then
+    old="${SYNOPKG_OLD_PKGVER:-unknown}"
+    backup="$PKG_VAR/config.env.pre-$old"
+    cp "$CONFIG_FILE" "$backup" 2>/dev/null && log "backed up config to $backup"
+  fi
   return 0
 }
 
 do_cleanup() {
   rm -f "$PKG_VAR/token-url.txt" "$PKG_VAR"/token-url.txt.tmp.* \
         "$PKG_VAR/status" "$PKG_VAR"/status.tmp.* 2>/dev/null || true
-  remove_token_link
+  remove_link "$TOKEN_LINK" "$PKG_ROOT/scripts/token"
+  remove_link "$CLI_LINK" "$PKG_ROOT/scripts/dshd"
 
-  # Keep config.env, dsh home and workspace for a reinstall. If this is an
-  # upgrade, the new package's postinst will reuse the same config.
   if [ -f "$CONFIG_FILE" ]; then
     load_dirs 2>/dev/null || true
   fi
@@ -112,9 +287,10 @@ do_cleanup() {
 
 case "${1:-}" in
   init) do_init ;;
+  preupgrade) do_preupgrade ;;
   cleanup) do_cleanup ;;
   *)
-    err "usage: $0 {init|cleanup}"
+    err "usage: $0 {init|preupgrade|cleanup}"
     exit 1
     ;;
 esac

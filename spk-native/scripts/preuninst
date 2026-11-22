@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stop the native process and remove volatile files; keep config and user data.
+set -u
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+[ -x "$SCRIPT_DIR/start-stop-status" ] && "$SCRIPT_DIR/start-stop-status" stop >/dev/null 2>&1 || true
+exec "$SCRIPT_DIR/installer" cleanup

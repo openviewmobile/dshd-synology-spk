@@ -1,3 +1,11 @@
 dist/
 .env
 .DS_Store
+spk-native/package/runtime/
+spk-native/package/runtime-armv8/
+spk/package/compose/data/
+*.spk
+/release/
+promo-video/renders/
+promo-video/.hyperframes/
+promo-video/assets/music.wav

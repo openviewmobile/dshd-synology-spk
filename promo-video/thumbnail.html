@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0}html,body{width:1280px;height:720px;overflow:hidden;background:#05070d;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:#f4f7fb}
+.stage{position:relative;width:1280px;height:720px;overflow:hidden;background:
+ radial-gradient(740px 520px at 76% 18%,rgba(37,99,235,.3),transparent 62%),
+ radial-gradient(700px 480px at 16% 92%,rgba(124,58,237,.2),transparent 62%),
+ linear-gradient(140deg,#04060b,#071421 55%,#05070d)}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(103,232,249,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(103,232,249,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(70% 70% at 55% 45%,#000,transparent)}
+.ring{position:absolute;border:1px solid rgba(103,232,249,.14);border-radius:50%;transform:rotate(-18deg)}
+.r1{width:720px;height:270px;right:-120px;top:210px}.r2{width:560px;height:210px;right:-40px;top:250px;border-color:rgba(167,139,250,.15)}
+.glow{position:absolute;width:620px;height:620px;right:-90px;top:60px;background:radial-gradient(circle,rgba(34,211,238,.17),transparent 65%);filter:blur(12px)}
+.copy{position:absolute;left:72px;top:112px;width:720px;z-index:3}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:16px;letter-spacing:.2em;color:#67e8f9;text-transform:uppercase;display:flex;gap:12px;align-items:center}
+.eyebrow:before{content:"";width:30px;height:1px;background:#67e8f9}
+h1{font-size:104px;line-height:.9;letter-spacing:-.06em;margin-top:24px;font-weight:800}
+.cyan{color:#a5f3fc}.white{color:#fff}
+.sub{font-size:26px;line-height:1.35;color:#b9c7da;margin-top:26px;max-width:650px;letter-spacing:-.01em}
+.badges{display:flex;gap:10px;margin-top:30px;flex-wrap:wrap}
+.b{font-family:"SF Mono",Menlo,monospace;font-size:13px;letter-spacing:.08em;padding:9px 13px;border-radius:999px;border:1px solid rgba(103,232,249,.4);color:#cffafe;background:rgba(8,47,73,.45)}
+.b.dim{border-color:rgba(148,163,184,.3);color:#d5dfec;background:rgba(15,23,42,.45)}
+.icon{position:absolute;right:88px;top:96px;width:196px;height:196px;border-radius:44px;overflow:hidden;box-shadow:0 0 90px rgba(34,211,238,.28),0 30px 60px rgba(0,0,0,.5);z-index:4;transform:rotate(4deg)}
+.icon img{width:100%;height:100%;display:block}
+.card{position:absolute;right:44px;bottom:52px;width:430px;border-radius:16px;overflow:hidden;border:1px solid rgba(148,163,184,.3);box-shadow:0 30px 70px rgba(0,0,0,.55);transform:rotate(-2deg);z-index:4;background:#0b1220}
+.card img{width:100%;display:block}
+.card-tag{position:absolute;right:58px;bottom:32px;z-index:5;font-family:"SF Mono",Menlo,monospace;font-size:12px;letter-spacing:.1em;color:#cffafe;background:rgba(8,47,73,.92);border:1px solid rgba(103,232,249,.4);padding:8px 10px;border-radius:8px}
+.footer{position:absolute;left:72px;bottom:42px;font-family:"SF Mono",Menlo,monospace;font-size:13px;letter-spacing:.1em;color:#9ba9bc;text-transform:uppercase;z-index:3}
+.stamp{position:absolute;right:44px;top:36px;font-family:"SF Mono",Menlo,monospace;font-size:12px;letter-spacing:.14em;color:#9ba9bc;z-index:5}
+</style></head><body>
+<div class="stage">
+  <div class="grid"></div><div class="glow"></div><div class="ring r1"></div><div class="ring r2"></div>
+  <div class="stamp">DSHD NATIVE · 0.4.0</div>
+  <div class="copy">
+    <div class="eyebrow">DeepSeek Harness on DSM 7.2</div>
+    <h1><span class="white">NO DOCKER.</span><br/><span class="cyan">AI AGENT ON<br/>YOUR NAS.</span></h1>
+    <div class="sub">The native Synology package for DeepSeek Harness. One process. Zero containers.</div>
+    <div class="badges"><span class="b">PACKAGE CENTER</span><span class="b">LOOPBACK + TOKEN</span><span class="b dim">x86_64 / armv8</span></div>
+  </div>
+  <div class="icon"><img src="assets/app-icon.png" alt=""/></div>
+  <div class="card"><img src="assets/package-center-crop.png" alt=""/></div>
+  <div class="card-tag">RUNNING ON DSM</div>
+  <div class="footer">Open source · GitHub: dshd-synology-spk</div>
+</div>
+</body></html>
