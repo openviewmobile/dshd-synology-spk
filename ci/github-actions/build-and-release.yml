@@ -1,0 +1,67 @@
+name: build and attach SPKs
+
+on:
+  workflow_dispatch:
+    inputs:
+      attach_to_release:
+        description: Upload the built SPKs to the v0.4.0 release
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            artifact: spk-x86_64
+            command: make native-runtime && make native-spk
+          - arch: armv8
+            artifact: spk-armv8
+            command: make native-armv8-runtime && make native-armv8-spk
+    env:
+      NPM_REGISTRY: https://registry.npmjs.org
+      APT_MIRROR: http://deb.debian.org
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.arch == 'armv8'
+      - name: Build runtime and SPK
+        run: ${{ matrix.command }}
+      - name: Upload SPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*.spk
+          if-no-files-found: error
+
+  attach:
+    name: attach artifacts to release
+    needs: build
+    if: inputs.attach_to_release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: spk-*
+          merge-multiple: true
+          path: dist
+      - name: Checksums and release upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum *.spk > SHA256SUMS-0.4.0.txt
+          cat SHA256SUMS-0.4.0.txt
+          gh release upload v0.4.0 ./*.spk SHA256SUMS-0.4.0.txt \
+            --clobber --repo "${{ github.repository }}"
