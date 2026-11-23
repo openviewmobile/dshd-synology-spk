@@ -229,12 +229,12 @@ Full evidence and screenshots: [docs/testing.md](docs/testing.md).
 
 ## Launch video
 
-A 50-second launch video is included as source (`promo-video/`) and as an MP4 in
-the release payload. It is built with Hyperframes and a deterministic three.js
-background; see [`promo-video/`](promo-video/README.md) for the storyboard,
-rebuild commands, captions, thumbnail, and upload metadata. The normalized MP4 is
-in the prepared GitHub release payload and will be published on YouTube. YouTube link:
-add it here after upload.
+A 50-second launch video is included as source (`promo-video/`). It is built with
+Hyperframes and a deterministic three.js background; see
+[`promo-video/`](promo-video/README.md) for the storyboard, rebuild commands,
+captions, thumbnail, and upload metadata. The normalized MP4 is in the local
+`promo-video/renders/` folder; the YouTube upload link will be added here after
+publication.
 
 ## Legacy Docker package (`0.3.0`)
 
