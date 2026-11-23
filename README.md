@@ -6,6 +6,7 @@
 [![x86_64 + armv8](https://img.shields.io/badge/arch-x86__64%20%7C%20armv8-2ea043)](#downloads)
 [![Native Node runtime](https://img.shields.io/badge/runtime-native%20Node%2024-8b5cf6)](#architecture)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![build SPKs](https://github.com/openviewmobile/dshd-synology-spk/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/openviewmobile/dshd-synology-spk/actions/workflows/build-and-release.yml)
 
 This package runs the [DeepSeek Harness](https://github.com/deepseek-ai) web agent as a
 Synology DSM 7.2 package. The `0.4.0` native package runs a bundled Node 24 runtime
