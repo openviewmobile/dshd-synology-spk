@@ -15,8 +15,8 @@
 
 | File | Architecture | Size | SHA-256 |
 |---|---|---|---|
-| `dshd-0.4.0.spk` | x86_64 | ~213 MB | `00193123cb6e5889648555294c6d463dabc9c4f14d2bd5af8ecc54c244b18e96` |
-| `dshd-0.4.0-armv8.spk` | armv8 | ~215 MB | `bf014ea8fb36e3903bad29f809d2c8f88b52598d34770cb0a988f90e45ce5a1d` |
+| `dshd-0.4.0.spk` | x86_64 | ~213 MB | `4ee8e49aedbd9e1f9f3296f9a75c7b2555fcb8d45cd1b030418a3b5e62293a2d` |
+| `dshd-0.4.0-armv8.spk` | armv8 | ~215 MB | `adfc5d7b0c6418877ce86c21c396f1f9b6be53d513d5e77d315e85c1f8b9426a` |
 
 Verify before installing:
 
