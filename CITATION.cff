@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this package in research or a published project, cite it as follows."
+title: "DeepSeek Harness for Synology DSM"
+type: software
+authors:
+  - name: "OpenView Mobile"
+version: 0.4.0
+date-released: 2026-11-23
+license: MIT
+repository-code: "https://github.com/openviewmobile/dshd-synology-spk"
+url: "https://github.com/openviewmobile/dshd-synology-spk"
+keywords:
+  - synology
+  - dsm
+  - deepseek
+  - ai-agent
+  - self-hosted
