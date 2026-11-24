@@ -61,7 +61,7 @@ jobs:
           tar -tf "$spk" | grep -q '^package.tgz$'
           echo "verified $spk"
       - name: Attest SPK provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.spk
       - name: Upload SPK artifact
