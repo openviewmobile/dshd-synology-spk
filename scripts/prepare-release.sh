@@ -16,7 +16,7 @@ SUMS="$ROOT/docs/release/SHA256SUMS-$VERSION.txt"
 
 mkdir -p "$OUT"
 cp "$SPK_X86" "$SPK_ARM" "$NOTES" "$SUMS" "$OUT/"
-cp "$ROOT/docs/acceptance-native-package-center.png" "$OUT/"
+cp "$ROOT/docs/package-center-branded.png" "$OUT/"
 cp "$ROOT/docs/acceptance-native-web-main.png" "$OUT/"
 cp "$ROOT/docs/social-preview.png" "$OUT/" 2>/dev/null || true
 if [ -f "$ROOT/promo-video/youtube-thumbnail.png" ]; then
