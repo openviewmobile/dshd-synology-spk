@@ -1,21 +1,36 @@
-name: build and attach SPKs
+name: build and release SPKs
 
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: Release tag to create or update
+        required: true
+        default: v0.4.0
+        type: string
       attach_to_release:
-        description: Upload the built SPKs to the v0.4.0 release
+        description: Upload the built SPKs to the release
         type: boolean
         default: true
+  push:
+    tags:
+      - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   build:
     name: build ${{ matrix.arch }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +53,17 @@ jobs:
         if: matrix.arch == 'armv8'
       - name: Build runtime and SPK
         run: ${{ matrix.command }}
+      - name: Verify package branding and layout
+        run: |
+          spk="$(ls dist/*.spk | head -n 1)"
+          tar -xOf "$spk" INFO | grep -q '^displayname="DeepSeek Harness"'
+          tar -tzf "$spk" | grep -q '^PACKAGE_ICON_256.PNG$'
+          tar -tzf "$spk" | grep -q '^package.tgz$'
+          echo "verified $spk"
+      - name: Attest SPK provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.spk
       - name: Upload SPK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -45,12 +71,15 @@ jobs:
           path: dist/*.spk
           if-no-files-found: error
 
-  attach:
+  release:
     name: attach artifacts to release
     needs: build
-    if: inputs.attach_to_release
+    if: github.event_name == 'push' || inputs.attach_to_release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: spk-*
@@ -60,8 +89,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION="$(sed -n 's/^version="\(.*\)"$/\1/p' spk-native/INFO | head -n 1)"
+          NOTES="docs/release/release-notes-${VERSION}.md"
+          TAG="${RELEASE_TAG}"
           cd dist
-          sha256sum *.spk > SHA256SUMS-0.4.0.txt
-          cat SHA256SUMS-0.4.0.txt
-          gh release upload v0.4.0 ./*.spk SHA256SUMS-0.4.0.txt \
-            --clobber --repo "${{ github.repository }}"
+          sha256sum ./*.spk > "SHA256SUMS-${VERSION}.txt"
+          cat "SHA256SUMS-${VERSION}.txt"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ -f "../$NOTES" ]; then
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                --title "DeepSeek Harness ${VERSION}" \
+                --notes-file "../$NOTES" --draft
+            else
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                --title "DeepSeek Harness ${VERSION}" --draft
+            fi
+          fi
+          gh release upload "$TAG" ./*.spk "SHA256SUMS-${VERSION}.txt" \
+            --clobber --repo "$GITHUB_REPOSITORY"
