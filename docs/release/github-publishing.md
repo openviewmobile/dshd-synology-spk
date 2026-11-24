@@ -74,11 +74,12 @@ Still needed from the maintainer:
 
 ## 4. CI and automation
 
-- [x] CI definitions prepared in `ci/github-actions/` — static checks, shell syntax,
-  JSON validity, English-docs guard, and manual x86_64/armv8 builds.
-- [ ] Copy CI definitions to `.github/workflows/` and push with a token that has
-  the `workflow` scope; see `ci/github-actions/README.md`.
-- [ ] Enable Actions and activate `ci/github-actions/*.yml` as described above.
+- [x] Active `.github/workflows/check.yml` — static checks, shell syntax, JSON
+  validity, and the English-docs guard.
+- [x] Active `.github/workflows/build-and-release.yml` — GitHub-hosted x86_64 /
+  armv8 builds that attach SPKs to the release.
+- [x] `main` branch protection requires the `static` check and blocks force pushes
+  and deletions.
 - [ ] Run the `checks` workflow on the first push; add the badge to README if
   desired.
 - [ ] Run `build SPK` manually once for each architecture and verify the artifact
@@ -105,7 +106,7 @@ Assets:
 | `dshd-0.4.0-armv8.spk` | Yes | armv8 package; state untested on ARM DSM |
 | `SHA256SUMS-0.4.0.txt` | Yes | checksums for both SPKs |
 | `release-notes-0.4.0.md` | Yes | paste into release body |
-| `acceptance-native-package-center.png` | Recommended | proof/visual |
+| `package-center-branded.png` | Recommended | branded Package Center preview |
 | `acceptance-native-web-main.png` | Recommended | UI preview |
 | `DSHD-Native-YouTube-thumbnail.png` | Optional | YouTube thumbnail |
 | Source code (zip/tar) | Automatic | GitHub-generated |

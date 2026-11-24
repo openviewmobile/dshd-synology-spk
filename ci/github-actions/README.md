@@ -1,21 +1,14 @@
 # GitHub Actions definitions
 
-These workflow definitions are kept here because the first publication token did
-not include GitHub's `workflow` OAuth scope. To activate them:
+These are reference copies of the workflows that are active under
+`.github/workflows/`. The live definitions are:
 
-```bash
-mkdir -p .github/workflows
-cp ci/github-actions/build-spk.yml ci/github-actions/build-and-release.yml .github/workflows/
-git add .github/workflows
-git commit -m "ci: enable checks and SPK build workflows"
-git push
-```
+- `.github/workflows/check.yml` — static checks on push and pull request.
+- `.github/workflows/build-and-release.yml` — manual x86_64 / armv8 build that
+  attaches SPKs to the release.
 
-The push account must have the `workflow` scope:
-
-```bash
-gh auth refresh -h github.com -s workflow
-```
+To update a workflow, edit both the live file and this reference copy, or remove
+this directory if the duplicate source becomes hard to maintain.
 
 `check.yml` runs static checks, shell syntax, JSON validity, and the English-docs
 guard. `build-spk.yml` builds one selected architecture manually. `build-and-release.yml`
