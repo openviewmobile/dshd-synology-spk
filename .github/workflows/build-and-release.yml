@@ -57,8 +57,8 @@ jobs:
         run: |
           spk="$(ls dist/*.spk | head -n 1)"
           tar -xOf "$spk" INFO | grep -q '^displayname="DeepSeek Harness"'
-          tar -tzf "$spk" | grep -q '^PACKAGE_ICON_256.PNG$'
-          tar -tzf "$spk" | grep -q '^package.tgz$'
+          tar -tf "$spk" | grep -q '^PACKAGE_ICON_256.PNG$'
+          tar -tf "$spk" | grep -q '^package.tgz$'
           echo "verified $spk"
       - name: Attest SPK provenance
         uses: actions/attest-build-provenance@v2
