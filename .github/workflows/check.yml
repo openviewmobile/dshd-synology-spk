@@ -1,0 +1,35 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Native package checks
+        run: make native-check
+      - name: Shell syntax
+        run: |
+          for f in spk-native/scripts/* spk/scripts/* scripts/*.sh; do
+            sh -n "$f" 2>/dev/null || bash -n "$f"
+          done
+      - name: JSON validity
+        run: |
+          python3 -m json.tool spk-native/conf/resource >/dev/null
+          python3 -m json.tool spk-native/conf/privilege >/dev/null
+          for f in spk-native/WIZARD_UIFILES/*; do python3 -m json.tool "$f" >/dev/null; done
+      - name: No CJK in repository docs
+        run: |
+          if grep -RInP '[\x{4e00}-\x{9fff}]' --include='*.md' README.md docs spk/README.md spk-native/README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md; then
+            echo "Documentation must be English; found CJK text." >&2
+            exit 1
+          fi
