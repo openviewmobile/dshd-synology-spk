@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek Harness — Synology package source</title>
+<style>
+  :root { color-scheme: dark; --bg:#07101c; --card:#0e1a2b; --ink:#f1f6ff; --muted:#a9b7ca; --cyan:#67e8f9; --line:#26364d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; background:radial-gradient(900px 500px at 80% 0%,#12304d,transparent 65%),var(--bg); color:var(--ink); line-height:1.55; }
+  main { max-width:920px; margin:0 auto; padding:64px 24px 80px; }
+  .eyebrow { color:var(--cyan); font:600 13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.16em; text-transform:uppercase; }
+  h1 { font-size:clamp(38px,7vw,64px); line-height:1.02; letter-spacing:-.045em; margin:14px 0 18px; }
+  h1 span { color:var(--cyan); }
+  p { color:var(--muted); font-size:18px; }
+  h2 { margin-top:42px; font-size:24px; letter-spacing:-.02em; }
+  .card { background:linear-gradient(150deg,rgba(20,34,54,.9),rgba(8,16,28,.9)); border:1px solid var(--line); border-radius:16px; padding:24px; margin:18px 0; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .btn { display:inline-block; padding:11px 16px; border-radius:9px; text-decoration:none; color:#04121a; background:var(--cyan); font-weight:650; }
+  .btn.secondary { color:var(--ink); background:#15243a; border:1px solid var(--line); font-weight:500; }
+  code { color:#cffafe; background:#0a1828; border:1px solid #1f324b; border-radius:6px; padding:2px 6px; overflow-wrap:anywhere; }
+  pre { background:#06101d; border:1px solid #1f324b; border-radius:10px; padding:16px; overflow:auto; color:#d7e5f7; }
+  .note { border-left:3px solid #f59e0b; padding-left:14px; color:#fcd9a0; }
+  .small { font-size:14px; color:#8ea0b7; }
+  footer { margin-top:48px; border-top:1px solid var(--line); padding-top:22px; font-size:14px; color:#8ea0b7; }
+  a { color:#a5f3fc; }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Community package source · DSM 7.2+</div>
+  <h1>DeepSeek Harness<br><span>for Synology DSM</span></h1>
+  <p>Run the open-source DeepSeek Harness (dsh) AI agent workspace natively on your NAS. No Docker, no Container Manager, no nested containers.</p>
+
+  <div class="card">
+    <div class="row">
+      <a class="btn" href="https://github.com/openviewmobile/dshd-synology-spk/releases/download/v0.4.0/dshd-0.4.0.spk">Download x86_64 SPK</a>
+      <a class="btn" href="https://github.com/openviewmobile/dshd-synology-spk/releases/download/v0.4.0/dshd-0.4.0-armv8.spk">Download armv8 SPK</a>
+      <a class="btn secondary" href="https://github.com/openviewmobile/dshd-synology-spk/releases/tag/v0.4.0">Release notes</a>
+    </div>
+    <p class="small">Unsigned community package. DSM will show a third-party source warning. Verify the SHA-256 checksum from the release before installing.</p>
+  </div>
+
+  <h2>Option 1: direct SPK install</h2>
+  <p>Download the SPK for your architecture, then use <strong>Package Center → Manual Install</strong>. Start the package and run <code>sudo /usr/local/bin/dshd-token</code> to open the token URL.</p>
+
+  <h2>Option 2: experimental Package Center source</h2>
+  <p>This page also publishes static package-source files for DSM. This is an experimental path; direct SPK installation is the supported method.</p>
+  <p><strong>x86_64 source URL</strong></p>
+  <pre>https://openviewmobile.github.io/dshd-synology-spk/spk-repo/x86_64.json</pre>
+  <p><strong>armv8 source URL</strong></p>
+  <pre>https://openviewmobile.github.io/dshd-synology-spk/spk-repo/armv8.json</pre>
+  <p>In DSM: <strong>Package Center → Settings → Package Source → Add</strong>. Use the URL matching your NAS architecture, then refresh Package Center.</p>
+  <p class="note">Do not add both URLs on the same NAS. The static source endpoint cannot filter by architecture server-side, so each file represents one architecture.</p>
+
+  <h2>Requirements and limitations</h2>
+  <ul>
+    <li>DSM 7.2 or later; x86_64 or armv8.</li>
+    <li>About 1.1 GB of free space for the installed runtime.</li>
+    <li>A model API key supplied by the user; no model is bundled.</li>
+    <li>UI listens on <code>127.0.0.1:3080</code> only; use a DSM reverse proxy for remote access.</li>
+    <li>Tested on DSM 7.2 VirtualDSM; full ARM DSM and hardware validation is continuing.</li>
+    <li>The SPK is unsigned. SHA-256 checksums and GitHub build provenance are available in the release.</li>
+  </ul>
+
+  <footer>
+    <a href="https://github.com/openviewmobile/dshd-synology-spk">Source code</a> ·
+    <a href="https://github.com/openviewmobile/dshd-synology-spk/issues">Issues</a> ·
+    <a href="https://github.com/openviewmobile/dshd-synology-spk#readme">Documentation</a><br>
+    Community-built integration, MIT licensed. Not an official Synology or DeepSeek product.
+  </footer>
+</main>
+</body>
+</html>
