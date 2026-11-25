@@ -1,16 +1,18 @@
 {
   "packages": [
     {
-      "changelog": "Initial native DSM 7.2 package. Bundled Node 24 + dsh; no Docker or Container Manager.",
+      "changelog": "DeepSeek Harness 0.4.0 native DSM package.",
       "conflictpkgs": null,
       "deppkgs": null,
-      "desc": "DeepSeek Harness (dsh) AI agent workspace running natively on Synology DSM. Bundled Node.js runtime, loopback-only UI, token authentication, Package Center lifecycle. No Docker or Container Manager required.",
+      "desc": "DeepSeek Harness (dsh) web agent running natively on DSM, without Docker or Container Manager.",
       "distributor": "OpenView Mobile",
       "distributor_url": "https://github.com/openviewmobile/dshd-synology-spk",
       "dname": "DeepSeek Harness",
       "download_count": 0,
+      "link": "https://github.com/openviewmobile/dshd-synology-spk/releases/download/v0.4.0/dshd-0.4.0.spk",
       "maintainer": "OpenView Mobile",
       "maintainer_url": "https://github.com/openviewmobile",
+      "md5": "ec0b957ebcbe4ea7f668793bd0f69b1b",
       "package": "dshd",
       "qinst": true,
       "qstart": true,
@@ -27,8 +29,7 @@
         "https://raw.githubusercontent.com/openviewmobile/dshd-synology-spk/main/spk-native/PACKAGE_ICON_256.PNG",
         "https://raw.githubusercontent.com/openviewmobile/dshd-synology-spk/main/spk-native/PACKAGE_ICON_256.PNG"
       ],
-      "version": "0.4.0",
-      "link": "https://github.com/openviewmobile/dshd-synology-spk/releases/download/v0.4.0/dshd-0.4.0.spk"
+      "version": "0.4.0"
     }
   ]
 }
